@@ -221,6 +221,47 @@ const App: React.FC = () => {
   }, [addToast]);
 
   const handleLogin = async (email: string, password: string) => {
+    // Special case for developer admin login
+    if (email === 'admin@zamzambank.com' && password === 'admin123') {
+        const adminUser: User = {
+            id: '00000000-0000-0000-0000-000000000000', // A placeholder UUID
+            name: 'Administrator',
+            email: 'admin@zamzambank.com',
+            role: UserRole.ADMIN,
+            approved: true,
+            points: 9999,
+            badges: [],
+            profileImageUrl: undefined,
+        };
+        setCurrentUser(adminUser);
+        setCurrentPage('app');
+        setCurrentView('admin');
+        await fetchAppData(adminUser);
+        addToast('Logged in as Administrator.', 'success');
+        return; // Skip Supabase auth
+    }
+    
+    // Special case for developer employee login
+    if (email === 'employee@zamzambank.com' && password === 'employee123') {
+        const employeeUser: User = {
+            id: '11111111-1111-1111-1111-111111111111', // A placeholder UUID
+            name: 'Demo Employee',
+            email: 'employee@zamzambank.com',
+            role: UserRole.EMPLOYEE,
+            approved: true,
+            points: 125,
+            badges: ['first-course'],
+            profileImageUrl: undefined,
+        };
+        setCurrentUser(employeeUser);
+        setCurrentPage('app');
+        setCurrentView('dashboard');
+        await fetchAppData(employeeUser);
+        addToast('Logged in as Demo Employee.', 'success');
+        return; // Skip Supabase auth
+    }
+
+
     // 1. Authenticate with Supabase
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) {

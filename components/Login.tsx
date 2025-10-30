@@ -51,7 +51,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setPage }) => {
             required
             autoComplete="email"
             className="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white"
-            placeholder="muktarabdella6@gmail.com"
+            placeholder="employee@zamzambank.com"
           />
         </div>
         <div className="mb-6">

@@ -51,21 +51,30 @@ const App: React.FC = () => {
 
   const fetchAppData = useCallback(async (user: User) => {
     try {
-        const fetchUsers = supabase.from('users').select('*');
+        const isAdmin = user.role === UserRole.ADMIN;
+
+        // Common fetches for both roles
         const fetchCourses = supabase.from('courses').select('*, reviews(*)');
-        const fetchProgress = supabase.from('user_progress').select('*');
         const fetchResources = supabase.from('external_resources').select('*').order('created_at', { ascending: false });
-        const fetchNotifications = supabase.from('notifications').select('*').eq('user_id', user.id).order('timestamp', { ascending: false });
         const fetchCategories = supabase.from('course_categories').select('*').order('name', { ascending: true });
+        const fetchNotifications = supabase.from('notifications').select('*').eq('user_id', user.id).order('timestamp', { ascending: false });
+
+        // Role-specific fetches
+        // Admin gets all data. Employees get all users for the leaderboard, but only their own progress.
+        const fetchUsers = supabase.from('users').select('*');
+        const fetchProgress = isAdmin
+            ? supabase.from('user_progress').select('*') // Admin gets all progress
+            : supabase.from('user_progress').select('*').eq('user_id', user.id); // Employee gets only their own progress
 
         const [
-            { data: usersData, error: usersError },
             { data: coursesData, error: coursesError },
-            { data: progressData, error: progressError },
             { data: resourcesData, error: resourcesError },
+            { data: categoriesData, error: categoriesError },
             { data: notificationsData, error: notificationsError },
-            { data: categoriesData, error: categoriesError }
-        ] = await Promise.all([fetchUsers, fetchCourses, fetchProgress, fetchResources, fetchNotifications, fetchCategories]);
+            { data: usersData, error: usersError },
+            { data: progressData, error: progressError }
+        ] = await Promise.all([fetchCourses, fetchResources, fetchCategories, fetchNotifications, fetchUsers, fetchProgress]);
+
 
         if (usersError) throw usersError;
         if (coursesError) throw coursesError;
@@ -89,20 +98,20 @@ const App: React.FC = () => {
 
         setUsers(usersData || []);
         setCourses((coursesData as Course[]) || []);
+        // For employees, this will only contain their own progress, which is what the dashboard needs.
+        // For admins, it will contain everyone's progress.
         setAllUserProgress(progressObject);
         setExternalResources(resourcesData || []);
         setNotifications(notificationsData || []);
         setCourseCategories(categoriesData || []);
         
     } catch (error: any) {
-        // This enhanced error handling prevents the unhelpful "[object Object]" toast message.
-        // It safely extracts the error message if it's a string, or provides a fallback.
         const message = (error && typeof error === 'object' && typeof error.message === 'string')
             ? error.message
             : 'An unknown error occurred. Check the console for details.';
         
         addToast(`Error loading data: ${message}`, 'error');
-        console.error("Error fetching app data:", error); // Log the full error object for debugging.
+        console.error("Error fetching app data:", error);
     }
   }, [addToast]);
   
@@ -221,47 +230,6 @@ const App: React.FC = () => {
   }, [addToast]);
 
   const handleLogin = async (email: string, password: string) => {
-    // Special case for developer admin login
-    if (email === 'admin@zamzambank.com' && password === 'admin123') {
-        const adminUser: User = {
-            id: '00000000-0000-0000-0000-000000000000', // A placeholder UUID
-            name: 'Administrator',
-            email: 'admin@zamzambank.com',
-            role: UserRole.ADMIN,
-            approved: true,
-            points: 9999,
-            badges: [],
-            profileImageUrl: undefined,
-        };
-        setCurrentUser(adminUser);
-        setCurrentPage('app');
-        setCurrentView('admin');
-        await fetchAppData(adminUser);
-        addToast('Logged in as Administrator.', 'success');
-        return; // Skip Supabase auth
-    }
-    
-    // Special case for developer employee login
-    if (email === 'employee@zamzambank.com' && password === 'employee123') {
-        const employeeUser: User = {
-            id: '11111111-1111-1111-1111-111111111111', // A placeholder UUID
-            name: 'Demo Employee',
-            email: 'employee@zamzambank.com',
-            role: UserRole.EMPLOYEE,
-            approved: true,
-            points: 125,
-            badges: ['first-course'],
-            profileImageUrl: undefined,
-        };
-        setCurrentUser(employeeUser);
-        setCurrentPage('app');
-        setCurrentView('dashboard');
-        await fetchAppData(employeeUser);
-        addToast('Logged in as Demo Employee.', 'success');
-        return; // Skip Supabase auth
-    }
-
-
     // 1. Authenticate with Supabase
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) {

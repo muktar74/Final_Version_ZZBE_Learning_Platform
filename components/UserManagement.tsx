@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { User, UserRole, NotificationType, Toast } from '../types';
 import UserFormModal from './UserFormModal';
@@ -64,27 +63,55 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, create
         handleCloseModal();
     } else { // Create new user
         if (!password) {
-            addToast('Password is required for new users.', 'error');
-            throw new Error('Password is required');
+            const errorMsg = 'Password is required for new users.';
+            addToast(errorMsg, 'error');
+            throw new Error(errorMsg);
         }
         
-        // Securely create and approve the user via an RPC call
-        const { data: newProfile, error } = await supabase.rpc('create_user_as_admin', {
-            user_email: user.email,
-            user_password: password,
-            user_name: user.name
+        // Step 1: Sign up the user. This creates the auth.user and should trigger profile creation.
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: user.email,
+            password: password,
+            options: {
+                data: {
+                    name: user.name,
+                },
+            },
         });
 
-        if (error) {
-            addToast(`Error creating user: ${error.message}`, 'error');
-            throw error;
+        if (signUpError) {
+            addToast(`Error creating user: ${signUpError.message}`, 'error');
+            throw signUpError;
         }
 
-        if (newProfile) {
-            setUsers(prev => [...prev, newProfile as User]);
-            addToast('User created and approved successfully!', 'success');
+        if (!signUpData.user) {
+            const errorMsg = 'User creation failed unexpectedly.';
+            addToast(errorMsg, 'error');
+            throw new Error(errorMsg);
+        }
+
+        // Step 2: Immediately try to approve the user in the 'users' table.
+        // The profile row should have been created by a trigger on auth.users.
+        const { data: updatedProfile, error: updateError } = await supabase
+            .from('users')
+            .update({ approved: true })
+            .eq('id', signUpData.user.id)
+            .select()
+            .single();
+        
+        if (updateError || !updatedProfile) {
+            // This could fail if the trigger hasn't run yet, or another RLS policy blocks it.
+            addToast(`User account created, but auto-approval failed: ${updateError?.message || 'Profile not found'}. Please approve manually.`, 'error');
+            
+            // Try to fetch the user to add to the list anyway
+            const { data: newProfile, error: fetchError } = await supabase.from('users').select('*').eq('id', signUpData.user.id).single();
+            if (newProfile && !fetchError) {
+                setUsers(prev => [...prev, newProfile as User]);
+            }
         } else {
-            addToast('User created, but failed to refresh user list.', 'error');
+            // Success!
+            setUsers(prev => [...prev, updatedProfile as User]);
+            addToast('User created and approved! They must verify their email before they can log in.', 'success');
         }
 
         handleCloseModal();

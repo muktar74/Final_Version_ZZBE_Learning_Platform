@@ -5,7 +5,7 @@ import { ChevronLeftIcon, TrophyIcon, UsersIcon } from './icons';
 
 interface LeaderboardProps {
   users: User[];
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 const Leaderboard: React.FC<LeaderboardProps> = ({ users, onBack }) => {
@@ -19,10 +19,12 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ users, onBack }) => {
 
   return (
     <div>
-        <button onClick={onBack} className="flex items-center text-sm font-medium text-zamzam-teal-600 hover:text-zamzam-teal-800 mb-6 transition">
-            <ChevronLeftIcon className="h-5 w-5 mr-1" />
-            Back to Dashboard
-        </button>
+        {onBack && (
+            <button onClick={onBack} className="flex items-center text-sm font-medium text-zamzam-teal-600 hover:text-zamzam-teal-800 mb-6 transition">
+                <ChevronLeftIcon className="h-5 w-5 mr-1" />
+                Back to Dashboard
+            </button>
+        )}
 
         <div className="bg-white p-8 rounded-xl shadow-lg">
             <div className="text-center mb-8">

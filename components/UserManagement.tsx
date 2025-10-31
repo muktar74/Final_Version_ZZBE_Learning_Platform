@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { User, UserRole, NotificationType, Toast } from '../types';
 import UserFormModal from './UserFormModal';
@@ -111,7 +112,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, create
         } else {
             // Success!
             setUsers(prev => [...prev, updatedProfile as User]);
-            addToast('User created and approved! They must verify their email before they can log in.', 'success');
+            addToast('User created and approved! They can now log in immediately.', 'success');
         }
 
         handleCloseModal();

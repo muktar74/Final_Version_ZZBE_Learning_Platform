@@ -3,6 +3,7 @@ import { Course, UserProgress, User, Badge, CourseCategory } from '../types';
 import CourseCard from './CourseCard';
 import { SearchIcon, TrophyIcon, BookOpenIcon as LibraryIcon, ShieldCheckIcon } from './icons';
 import { BADGE_DEFINITIONS } from '../constants';
+import BadgesModal from './BadgesModal';
 
 type FilterStatus = 'all' | 'inProgress' | 'completed';
 
@@ -17,10 +18,10 @@ interface DashboardProps {
   showOverview?: boolean;
 }
 
-const BadgesWidget: React.FC<{ userBadges: string[] }> = ({ userBadges }) => {
-    if (userBadges.length === 0) {
+const BadgesWidget: React.FC<{ userBadges: string[], onClick: () => void }> = ({ userBadges, onClick }) => {
+    if (!userBadges || userBadges.length === 0) {
         return (
-             <div className="bg-slate-50 p-4 rounded-lg text-center">
+             <div className="bg-slate-50 p-4 rounded-lg text-center h-full flex flex-col justify-center">
                 <ShieldCheckIcon className="h-6 w-6 mx-auto text-slate-400 mb-1"/>
                 <p className="text-sm font-semibold text-slate-600">No Badges Yet</p>
                 <p className="text-xs text-slate-500">Complete courses to earn them!</p>
@@ -29,26 +30,21 @@ const BadgesWidget: React.FC<{ userBadges: string[] }> = ({ userBadges }) => {
     }
     
     return (
-         <div className="bg-slate-50 p-4 rounded-lg">
-            <p className="text-sm font-semibold text-center text-slate-600 mb-2">My Badges</p>
+         <button onClick={onClick} className="bg-slate-50 p-4 rounded-lg text-center w-full h-full hover:bg-slate-100 transition">
+            <p className="text-sm font-semibold text-slate-600 mb-2">My Badges</p>
             <div className="flex justify-center items-center space-x-3">
-                {userBadges.map(badgeId => {
+                {(userBadges || []).slice(0, 3).map(badgeId => { // Show max 3 icons
                     const badge = BADGE_DEFINITIONS[badgeId];
                     if (!badge) return null;
                     const Icon = badge.icon;
                     return (
-                        <div key={badge.id} className="group relative">
+                        <div key={badge.id}>
                             <Icon className="h-8 w-8 text-zamzam-teal-600" />
-                            <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs rounded py-1 px-2 text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                <p className="font-bold">{badge.name}</p>
-
-                                <p>{badge.description}</p>
-                            </div>
                         </div>
                     );
                 })}
             </div>
-        </div>
+        </button>
     );
 };
 
@@ -57,10 +53,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isBadgesModalOpen, setIsBadgesModalOpen] = useState(false);
 
   const completedCoursesCount = useMemo(() => {
     return Object.values(userProgress).filter((p: UserProgress[string]) => p.completionDate).length;
   }, [userProgress]);
+
+  const courseCounts = useMemo(() => {
+    const progressValues = Object.values(userProgress);
+    const inProgress = progressValues.filter(p => p.completedModules.length > 0 && !p.completionDate).length;
+    const completed = progressValues.filter(p => !!p.completionDate).length;
+    return {
+        all: courses.length,
+        inProgress,
+        completed
+    };
+  }, [courses, userProgress]);
+
 
   const recentlyViewedCourses = useMemo(() => {
     return courses
@@ -76,8 +85,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
   const recommendedCourses = useMemo(() => {
     const completedOrStartedCategories = new Set(
         Object.entries(userProgress)
-            // FIX: Explicitly type `progress` to resolve TypeScript's 'unknown' type inference
-            // for values from Object.entries, which was causing a compile error.
             .filter(([, progress]: [string, UserProgress[string]]) => progress.completedModules.length > 0 || progress.completionDate)
             .map(([courseId]) => courses.find(c => c.id === courseId)?.category)
             .filter(Boolean)
@@ -160,6 +167,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
 
   return (
     <div>
+       <BadgesModal 
+        isOpen={isBadgesModalOpen}
+        onClose={() => setIsBadgesModalOpen(false)}
+        userBadges={user.badges}
+       />
       {showOverview && (
         <>
             <div className="mb-8 p-6 bg-white rounded-xl shadow">
@@ -175,7 +187,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
                         <p className="text-sm font-semibold text-slate-600">Courses Completed</p>
                     </div>
                     <div className="md:col-span-1">
-                        <BadgesWidget userBadges={user.badges} />
+                        <BadgesWidget userBadges={user.badges} onClick={() => setIsBadgesModalOpen(true)} />
                     </div>
                     <button onClick={onViewLeaderboard} className="bg-amber-100 p-4 rounded-lg hover:bg-amber-200 transition group text-center">
                         <TrophyIcon className="h-6 w-6 mx-auto text-amber-600 mb-1"/>
@@ -247,9 +259,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none" />
             </div>
             <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-full self-center">
-              <FilterButton status="all" label="All" />
-              <FilterButton status="inProgress" label="In Progress" />
-              <FilterButton status="completed" label="Completed" />
+              <FilterButton status="all" label={`All (${courseCounts.all})`} />
+              <FilterButton status="inProgress" label={`In Progress (${courseCounts.inProgress})`} />
+              <FilterButton status="completed" label={`Completed (${courseCounts.completed})`} />
             </div>
         </div>
       </div>

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Course, AiMessage } from '../types';
 import CourseCard from './CourseCard';
@@ -76,38 +75,35 @@ const HomePage: React.FC<HomePageProps> = ({ setPage }) => {
     <div className="bg-white font-sans text-slate-800">
       <PublicHeader setPage={setPage} />
       
-      {/* Hero Section */}
       <main>
+        {/* Hero Section */}
         <div className="bg-zamzam-teal-50">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-                <h1 className="text-4xl md:text-6xl font-extrabold text-zamzam-teal-800 mb-4">
-                Unlock Your Potential in Islamic Finance
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 text-center">
+                <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-zamzam-teal-800 mb-4 leading-tight">
+                    Unlock Your Potential in Islamic Finance
                 </h1>
-                <p className="text-lg md:text-xl text-slate-700 font-medium max-w-3xl mx-auto mb-4">
-                ZamZam Bank Academy offers comprehensive learning resources to cultivate expertise in ethical banking and Islamic finance.
+                <p className="text-lg md:text-xl text-slate-700 max-w-3xl mx-auto mb-8">
+                    Join Zamzam Bank's dedicated e-learning platform to enhance your expertise, master IFB principles, and accelerate your career growth.
                 </p>
-                <p className="text-lg md:text-xl text-slate-600 max-w-3xl mx-auto mb-8">
-                Join Zamzam Bank's dedicated e-learning platform to enhance your expertise, master IFB principles, and accelerate your career growth.
-                </p>
-                <div className="flex justify-center space-x-4">
-                <button
-                    onClick={() => setPage('login')}
-                    className="bg-zamzam-teal-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-zamzam-teal-700 transition shadow-lg"
-                >
-                    Employee Login
-                </button>
-                <button
-                    onClick={() => setPage('register')}
-                    className="bg-white text-zamzam-teal-700 font-bold py-3 px-8 rounded-lg hover:bg-zamzam-teal-100 transition border border-zamzam-teal-200"
-                >
-                    Register Now
-                </button>
+                <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    <button
+                        onClick={() => setPage('login')}
+                        className="w-full sm:w-auto bg-zamzam-teal-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-zamzam-teal-700 transition shadow-lg text-lg"
+                    >
+                        Employee Login
+                    </button>
+                    <button
+                        onClick={() => setPage('register')}
+                        className="w-full sm:w-auto bg-white text-zamzam-teal-700 font-bold py-3 px-8 rounded-lg hover:bg-zamzam-teal-100 transition border border-zamzam-teal-200 text-lg"
+                    >
+                        Register Now
+                    </button>
                 </div>
             </div>
         </div>
 
         {/* Features Section */}
-        <section className="py-20">
+        <section className="py-16 sm:py-20">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-12">
                     <h2 className="text-3xl font-bold text-slate-800">Why Choose Our Platform?</h2>
@@ -134,7 +130,7 @@ const HomePage: React.FC<HomePageProps> = ({ setPage }) => {
         </section>
 
         {/* Why ZamZam Bank Academy Section */}
-        <section className="bg-slate-50 py-20">
+        <section className="bg-slate-50 py-16 sm:py-20">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="grid md:grid-cols-2 gap-12 items-center">
                     <div className="order-2 md:order-1">
@@ -175,6 +171,7 @@ const HomePage: React.FC<HomePageProps> = ({ setPage }) => {
                             src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=1471&auto=format&fit=crop" 
                             alt="Professionals collaborating in a modern learning environment"
                             className="rounded-xl shadow-lg w-full h-full object-cover"
+                            loading="lazy"
                         />
                     </div>
                 </div>
@@ -182,7 +179,7 @@ const HomePage: React.FC<HomePageProps> = ({ setPage }) => {
         </section>
 
         {/* Featured Courses Section */}
-        <section className="bg-white py-20">
+        <section className="bg-white py-16 sm:py-20">
              <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-12">
                     <h2 className="text-3xl font-bold text-slate-800">Featured Courses</h2>

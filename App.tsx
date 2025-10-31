@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { User, Course, UserRole, UserProgress, CertificateData, Notification, NotificationType, AiMessage, Review, Toast as ToastType, AllUserProgress, ExternalResource, CourseCategory } from './types';
 import { BADGE_DEFINITIONS } from './constants';
@@ -18,7 +17,8 @@ import ResourceLibrary from './components/ResourceLibrary';
 import ErrorBoundary from './components/ErrorBoundary';
 import Toast from './components/Toast';
 import UserProfile from './components/UserProfile';
-import { supabase } from './services/supabaseClient';
+import Spinner from './components/Spinner';
+import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import type { Session, RealtimeChannel } from '@supabase/supabase-js';
 
 
@@ -26,6 +26,23 @@ type View = 'dashboard' | 'course' | 'certificate' | 'admin' | 'leaderboard' | '
 type Page = 'home' | 'login' | 'register' | 'app';
 
 const App: React.FC = () => {
+  // Add configuration check at the very top.
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-red-50 flex items-center justify-center p-4 font-sans">
+        <div className="text-center p-8 bg-white rounded-lg shadow-md max-w-lg mx-auto">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Application Configuration Error</h1>
+          <p className="text-slate-600">
+            The connection to the backend service is not configured. The application cannot start.
+          </p>
+          <p className="text-sm text-slate-500 mt-2">
+            Please contact an administrator to ensure the `SUPABASE_URL` and `SUPABASE_ANON_KEY` environment variables are set correctly.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const [session, setSession] = useState<Session | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -54,7 +71,7 @@ const App: React.FC = () => {
         const isAdmin = user.role === UserRole.ADMIN;
 
         // Common fetches for both roles
-        const fetchCourses = supabase.from('courses').select('*, reviews(*)');
+        const fetchCourses = supabase.from('courses').select('*, reviews(*)').order('created_at', { ascending: false });
         const fetchResources = supabase.from('external_resources').select('*').order('created_at', { ascending: false });
         const fetchCategories = supabase.from('course_categories').select('*').order('name', { ascending: true });
         const fetchNotifications = supabase.from('notifications').select('*').eq('user_id', user.id).order('timestamp', { ascending: false });
@@ -145,24 +162,20 @@ const App: React.FC = () => {
               addToast('Your account is pending approval.', 'error');
               await supabase.auth.signOut();
           } else {
-              setCurrentUser(profile as User);
+              const sanitizedProfile = {
+                ...profile,
+                badges: profile.badges || [], // Ensure badges is always an array
+              };
+              setCurrentUser(sanitizedProfile as User);
               setCurrentPage('app');
-              setCurrentView(profile.role === UserRole.ADMIN ? 'admin' : 'dashboard');
-              await fetchAppData(profile as User);
+              setCurrentView(sanitizedProfile.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+              await fetchAppData(sanitizedProfile as User);
           }
         } else {
-          // This block is now the single source of truth for the logged-out state.
+          // This block now serves as a safety net for non-manual sign-outs (e.g., token expiration).
+          // Manual sign-out cleanup is handled directly in `handleLogout`.
           setCurrentUser(null);
           setCurrentPage('home');
-          setUsers([]);
-          setCourses([]);
-          setNotifications([]);
-          setAllUserProgress({});
-          setExternalResources([]);
-          setCourseCategories([]);
-          setAiChatHistory([]);
-          setSelectedCourse(null);
-          setCertificateData(null);
         }
       } catch (e) {
           console.error("Error in onAuthStateChange listener:", e);
@@ -196,37 +209,65 @@ const App: React.FC = () => {
 
 
   const handleLogout = async () => {
-    // Optimistically update the UI for a responsive user experience.
+    // Immediately and synchronously clear all user-specific state.
+    // This is the single source of truth for logout cleanup.
     setCurrentUser(null);
     setCurrentPage('home');
+    setUsers([]);
+    setCourses([]);
+    setNotifications([]);
+    setAllUserProgress({});
+    setExternalResources([]);
+    setCourseCategories([]);
+    setAiChatHistory([]);
+    setSelectedCourse(null);
+    setCertificateData(null);
     
     const { error } = await supabase.auth.signOut();
     if (error) {
         addToast(`Error logging out: ${error.message}`, 'error');
     }
-    // The onAuthStateChange listener will still run to perform the full state cleanup in the background.
+    // The onAuthStateChange listener will still run, but all critical state has already been cleared.
   };
   
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
-  };
+  }, []);
+
+  const handleMarkNotificationsRead = useCallback(async () => {
+      if (!currentUser) return;
+      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+      if (unreadIds.length === 0) return;
+
+      // Optimistically update UI
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+
+      const { error } = await supabase.from('notifications').update({ read: true }).in('id', unreadIds);
+      if (error) {
+          addToast('Could not mark notifications as read on the server.', 'error');
+          // Revert optimistic update on error
+          setNotifications(prev => prev.map(n => unreadIds.includes(n.id) ? { ...n, read: false } : n));
+      }
+  }, [currentUser, notifications, addToast]);
 
 
   const createNotification = useCallback(async (userId: string, type: NotificationType, message: string) => {
-    const newNotification = {
-      // id is generated by DB
-      user_id: userId,
-      type,
-      message,
-      timestamp: new Date().toISOString(),
-      read: false,
-    };
-    const { error } = await supabase.from('notifications').insert(newNotification);
+    // This function is called by admins (for other users) and by employees (for themselves).
+    // A direct client-side insert fails RLS when an admin tries to create a notification for another user.
+    // The correct, secure pattern is to use a Supabase RPC (Remote Procedure Call) function.
+    // This RPC function (`create_notification`) must be created in the Supabase SQL editor.
+    // It should run with elevated privileges (`SECURITY DEFINER`) and contain logic to verify
+    // that the caller is either an admin or is creating a notification for themselves.
+    const { error } = await supabase.rpc('create_notification', {
+        p_user_id: userId,
+        p_type: type,
+        p_message: message,
+    });
+
     if (error) {
         addToast(`Error creating notification: ${error.message}`, 'error');
     }
-    // If user is viewing their own notifications, it will update via realtime subscription.
-    // If admin is creating it for someone else, no need to update admin's state.
+    // Realtime subscription will handle UI updates for the recipient.
   }, [addToast]);
 
   const handleLogin = async (email: string, password: string) => {
@@ -279,7 +320,7 @@ const App: React.FC = () => {
     });
     if (error) addToast(error.message, 'error');
     else {
-        addToast('Registration successful! Please check your email to verify your account. Your account will then require administrator approval.', 'success');
+        addToast('Registration successful! Your account now requires administrator approval before you can log in.', 'success');
         setCurrentPage('login');
     }
   };
@@ -300,33 +341,71 @@ const App: React.FC = () => {
         addToast(`Error awarding points: ${error.message}`, 'error');
     } else {
         setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, points: u.points + points } : u));
+        if (currentUser?.id === userId) {
+            setCurrentUser(prev => prev ? { ...prev, points: prev.points + points } : null);
+        }
     }
-  }, [addToast]);
+  }, [addToast, currentUser]);
 
   const handleSelectCourse = useCallback(async (course: Course) => {
     setSelectedCourse(course);
     setCurrentView('course');
-    if (currentUser) {
-        const { error } = await supabase.from('user_progress').upsert({
-            user_id: currentUser.id,
-            course_id: course.id,
+    // Just update recently viewed timestamp if already enrolled/viewed
+    if (currentUser && allUserProgress[currentUser.id]?.[course.id]) {
+        const { error } = await supabase.from('user_progress').update({
             recently_viewed: new Date().toISOString()
-        });
-        if (error) addToast(`Error updating progress: ${error.message}`, 'error');
-        // also update local state for immediate feedback
-        setAllUserProgress(prev => {
-            const currentUserProgress = prev[currentUser.id] || {};
-            const updatedUserProgress = {
-                ...currentUserProgress,
-                [course.id]: {
-                    ...(currentUserProgress[course.id] || { completedModules: [], quizScore: null }),
-                    recentlyViewed: new Date().toISOString(),
+        }).match({ user_id: currentUser.id, course_id: course.id });
+        
+        if (error) {
+            addToast(`Error updating progress: ${error.message}`, 'error');
+        } else {
+             setAllUserProgress(prev => ({
+                ...prev,
+                [currentUser.id]: {
+                    ...prev[currentUser.id],
+                    [course.id]: {
+                        ...prev[currentUser.id][course.id],
+                        recentlyViewed: new Date().toISOString(),
+                    }
                 }
-            };
-            return { ...prev, [currentUser.id]: updatedUserProgress };
-        });
+             }));
+        }
     }
-  }, [currentUser, addToast]);
+  }, [currentUser, allUserProgress, addToast]);
+
+  const handleEnroll = useCallback(async (courseId: string) => {
+    if (!currentUser) return;
+
+    const course = courses.find(c => c.id === courseId);
+    if (!course) return;
+
+    const { error } = await supabase.from('user_progress').upsert({
+        user_id: currentUser.id,
+        course_id: courseId,
+        recently_viewed: new Date().toISOString()
+    }, { onConflict: 'user_id, course_id' });
+    
+    if (error) {
+        addToast(`Error enrolling in course: ${error.message}`, 'error');
+        return;
+    }
+
+    addToast(`Successfully enrolled in "${course.title}"!`, 'info');
+
+    // also update local state for immediate feedback
+    setAllUserProgress(prev => {
+        const currentUserProgress = prev[currentUser.id] || {};
+        const updatedUserProgress = {
+            ...currentUserProgress,
+            [courseId]: {
+                ...(currentUserProgress[courseId] || { completedModules: [], quizScore: null }),
+                recentlyViewed: new Date().toISOString(),
+            }
+        };
+        return { ...prev, [currentUser.id]: updatedUserProgress };
+    });
+  }, [currentUser, courses, addToast]);
+
 
   const handleCourseComplete = useCallback(async (course: Course, score: number) => {
     if (!currentUser) return;
@@ -336,7 +415,7 @@ const App: React.FC = () => {
         user_id: currentUser.id,
         course_id: course.id,
         quiz_score: score,
-    });
+    }, { onConflict: 'user_id, course_id' });
 
     if (progressSaveError) {
         addToast(`Error saving quiz score: ${progressSaveError.message}`, 'error');
@@ -372,7 +451,8 @@ const App: React.FC = () => {
             user_id: currentUser.id,
             course_id: course.id,
             completion_date: completionDate
-        });
+        }, { onConflict: 'user_id, course_id' });
+
         if (error) {
             addToast(`Error saving completion date: ${error.message}`, 'error');
         } else {
@@ -407,12 +487,13 @@ const App: React.FC = () => {
 
     const completedCourses = Object.values(userProgressAfterUpdate[currentUser.id] || {}).filter((p: UserProgress[string]) => p.completionDate);
     const completedCount = completedCourses.length;
-
+    
+    const currentBadges = currentUser.badges || [];
     const newBadges: string[] = [];
-    if (completedCount >= 1 && !currentUser.badges.includes('first-course')) newBadges.push('first-course');
-    if (completedCount >= 3 && !currentUser.badges.includes('prolific-learner')) newBadges.push('prolific-learner');
-    if (score === 100 && !currentUser.badges.includes('quiz-master')) newBadges.push('quiz-master');
-    if (courses.length > 0 && completedCount === courses.length && !currentUser.badges.includes('completionist')) newBadges.push('completionist');
+    if (completedCount >= 1 && !currentBadges.includes('first-course')) newBadges.push('first-course');
+    if (completedCount >= 3 && !currentBadges.includes('prolific-learner')) newBadges.push('prolific-learner');
+    if (score === 100 && !currentBadges.includes('quiz-master')) newBadges.push('quiz-master');
+    if (courses.length > 0 && completedCount === courses.length && !currentBadges.includes('completionist')) newBadges.push('completionist');
 
     if (newBadges.length > 0) {
         let pointsToAddForBadges = 0;
@@ -425,16 +506,13 @@ const App: React.FC = () => {
             }
         });
         
-        const updatedBadges = [...currentUser.badges, ...newBadges];
+        const updatedBadges = [...currentBadges, ...newBadges];
         const { error: userUpdateError } = await supabase.from('users').update({ badges: updatedBadges }).eq('id', currentUser.id);
         if (userUpdateError) { addToast('Error awarding badge.', 'error'); return; }
         
         await awardPoints(currentUser.id, pointsToAddForBadges);
 
         setCurrentUser(prev => prev ? { ...prev, badges: updatedBadges } : null);
-        setUsers(prevUsers => prevUsers.map(u => 
-            u.id === currentUser.id ? { ...u, badges: updatedBadges, points: u.points + pointsToAddForBadges } : u
-        ));
     }
   }, [currentUser, allUserProgress, awardPoints, createNotification, courses, addToast]);
 
@@ -447,8 +525,6 @@ const App: React.FC = () => {
 
     // Prevent re-processing if the module is already completed.
     if (!currentCourseProgress.completedModules.includes(moduleId)) {
-      // Award points for the new module completion.
-      await awardPoints(currentUser.id, 10);
       
       const updatedCompletedModules = [...currentCourseProgress.completedModules, moduleId];
 
@@ -457,12 +533,15 @@ const App: React.FC = () => {
         user_id: currentUser.id,
         course_id: courseId,
         completed_modules: updatedCompletedModules,
-      });
+      }, { onConflict: 'user_id, course_id' });
 
       if (error) {
         addToast(`Error updating progress: ${error.message}`, 'error');
         return;
       }
+      
+      // Award points for the new module completion *after* successful save.
+      await awardPoints(currentUser.id, 10);
       
       // Update the local state for immediate UI feedback.
       // Using a functional update ensures we are modifying the most recent state.
@@ -487,30 +566,42 @@ const App: React.FC = () => {
   const handleRateCourse = useCallback(async (courseId: string, rating: number, comment: string) => {
     if (!currentUser) return;
     
-    const { error: progressError } = await supabase.from('user_progress').upsert({
-        user_id: currentUser.id,
-        course_id: courseId,
-        rating: rating,
-    });
-    if (progressError) { addToast('Error saving rating.', 'error'); return; }
+    try {
+        const { data: savedReview, error: reviewError } = await supabase.from('reviews').insert({
+            author_id: currentUser.id,
+            author_name: currentUser.name,
+            rating,
+            comment,
+            timestamp: new Date().toISOString(),
+            course_id: courseId
+        }).select().single();
 
-    const newReview: Omit<Review, 'id'> = {
-        authorId: currentUser.id,
-        authorName: currentUser.name,
-        rating,
-        comment,
-        timestamp: new Date().toISOString(),
-    };
+        if(reviewError || !savedReview) {
+            throw reviewError || new Error("Failed to save review.");
+        }
+        
+        // Step 2: Update the user's progress with their rating
+        const { error: progressError } = await supabase.from('user_progress').upsert({
+            user_id: currentUser.id,
+            course_id: courseId,
+            rating: rating,
+        }, { onConflict: 'user_id, course_id' });
 
-    const { data: savedReview, error: reviewError } = await supabase.from('reviews').insert({ ...newReview, course_id: courseId }).select().single();
-    if(reviewError || !savedReview) { addToast('Error saving review.', 'error'); return; }
-    
-    // Optimistic UI updates
-    setAllUserProgress(prev => ({ ...prev, [currentUser.id]: { ...prev[currentUser.id], [courseId]: { ...prev[currentUser.id]?.[courseId], rating: rating }}}));
-    setCourses(prevCourses => prevCourses.map(c => 
-        c.id === courseId ? { ...c, reviews: [...c.reviews, savedReview as Review] } : c
-    ));
-    addToast('Thank you for your review!', 'success');
+        if (progressError) {
+            // If this fails, we should ideally roll back the review insert, but for now, we'll just log the error.
+            console.error("Failed to save rating to progress, but review was saved:", progressError);
+        }
+
+        // Step 3: Optimistically update all local state
+        setAllUserProgress(prev => ({ ...prev, [currentUser.id]: { ...prev[currentUser.id], [courseId]: { ...prev[currentUser.id]?.[courseId], rating: rating }}}));
+        setCourses(prevCourses => prevCourses.map(c => 
+            c.id === courseId ? { ...c, reviews: [...c.reviews, savedReview as Review] } : c
+        ));
+        addToast('Thank you for your review!', 'success');
+        
+    } catch (error: any) {
+        addToast(error.message || 'An error occurred while submitting your review.', 'error');
+    }
   }, [currentUser, addToast]);
 
   const handleUpdateUser = async (updatedUser: User) => {
@@ -524,7 +615,9 @@ const App: React.FC = () => {
         addToast(`Error updating profile: ${error.message}`, 'error');
     } else {
         setUsers(prevUsers => prevUsers.map(u => u.id === updatedUser.id ? updatedUser : u));
-        setCurrentUser(updatedUser);
+        if (currentUser?.id === updatedUser.id) {
+            setCurrentUser(updatedUser);
+        }
         addToast('Profile updated successfully!', 'success');
     }
   };
@@ -563,6 +656,7 @@ const App: React.FC = () => {
       case 'course':
         return (
           <CourseView
+            key={selectedCourse?.id} // Add key to force re-mount on course change
             course={selectedCourse}
             setCourses={setCourses}
             currentUser={currentUser}
@@ -571,6 +665,7 @@ const App: React.FC = () => {
             onCourseComplete={(score) => selectedCourse && handleCourseComplete(selectedCourse, score)}
             onBack={() => setView('dashboard')}
             addToast={addToast}
+            onEnroll={handleEnroll}
           />
         );
       case 'certificate':
@@ -580,7 +675,7 @@ const App: React.FC = () => {
             onBackToDashboard={() => setView('dashboard')}
             onRateCourse={handleRateCourse}
             userRating={currentUserProgress[certificateData.courseId]?.rating}
-            userReview={courses.find(c => c.id === certificateData.courseId)?.reviews.find(r => r.authorId === currentUser.id)}
+            userReview={courses.find(c => c.id === certificateData.courseId)?.reviews.find(r => r.author_id === currentUser.id)}
             addToast={addToast}
           />
         );
@@ -636,14 +731,20 @@ const App: React.FC = () => {
                 <Footer />
             </div>;
         case 'app':
-             if (!currentUser) return <div className="min-h-screen bg-zamzam-teal-50 flex items-center justify-center"><p>Loading...</p></div>;
+             if (!currentUser) {
+                return (
+                    <div className="min-h-screen bg-zamzam-teal-50 flex items-center justify-center">
+                        <Spinner />
+                    </div>
+                );
+             }
              return (
                 <div className="min-h-screen bg-zamzam-teal-50 font-sans text-slate-800 flex flex-col">
                   <Header
                     user={currentUser}
                     onLogout={handleLogout}
                     notifications={notifications}
-                    setNotifications={setNotifications}
+                    onMarkNotificationsRead={handleMarkNotificationsRead}
                     onNavigate={setView}
                   />
                   <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">

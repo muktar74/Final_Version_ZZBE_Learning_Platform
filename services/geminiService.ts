@@ -1,17 +1,11 @@
+
 import { GoogleGenAI, Type } from '@google/genai';
 import { Module, QuizQuestion, AiMessage } from '../types';
+import { GEMINI_API_KEY } from './config';
 
-// Initialize the AI client directly using the environment variable, as per guidelines.
-// The serverless function for fetching the key has been removed as it was causing errors
-// and is against the recommended implementation pattern.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// A helper function to ensure the client is initialized before use.
-const checkAiClient = () => {
-    if (!process.env.API_KEY) {
-        throw new Error("Could not connect to the AI service. Please ensure the API key is configured correctly in the deployment settings.");
-    }
-};
+// Initialize the AI client using the API key from the config file.
+// The Gemini SDK will handle the error if the API key is missing.
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 interface GeneratedContent {
   description: string;
@@ -20,7 +14,6 @@ interface GeneratedContent {
 
 export const generateCourseContent = async (topic: string): Promise<GeneratedContent> => {
  try {
-    checkAiClient();
     const prompt = `Generate course content for a corporate e-learning platform. The topic is "${topic}".
 The target audience is employees of Zamzam Bank, an Islamic financial institution.
 The content should be professional, informative, and suitable for professional development in Islamic finance.
@@ -77,7 +70,6 @@ Format the module content using simple HTML tags like <p>, <strong>, <ul>, and <
 
 export const generateCourseFromText = async (documentText: string): Promise<GeneratedContent> => {
     try {
-        checkAiClient();
         const prompt = `You are an expert instructional designer for Zamzam Bank, an Islamic financial institution.
         Based on the following textbook content, create a comprehensive e-learning course for bank employees.
         
@@ -142,7 +134,6 @@ export const generateCourseFromText = async (documentText: string): Promise<Gene
 
 export const generateQuiz = async (courseContent: string): Promise<QuizQuestion[]> => {
   try {
-    checkAiClient();
     const prompt = `Based on the following course content, generate a quiz with 3 multiple-choice questions.
 Each question should have 4 options and one correct answer.
 The questions should test understanding of the key concepts in the content.
@@ -201,7 +192,6 @@ ${courseContent}
 
 export const getAiChatResponse = async (history: AiMessage[], courseContext?: {title: string, description: string}): Promise<string> => {
     try {
-        checkAiClient();
         let systemInstruction = "You are a helpful and knowledgeable assistant for Zamzam Bank's e-learning platform. Your expertise is in Islamic Finance Banking (IFB). Be friendly, professional, and provide clear explanations. You must not answer questions outside the scope of Islamic finance, banking, or the provided course context.";
         
         if (courseContext) {
@@ -233,7 +223,6 @@ export const getAiChatResponse = async (history: AiMessage[], courseContext?: {t
 
 export const analyzeDiscussionTopics = async (discussionText: string): Promise<string[]> => {
     try {
-        checkAiClient();
         const prompt = `Analyze the following discussion forum comments from a corporate e-learning course on Islamic Finance.
 Identify and list up to 5 main topics, keywords, or questions that people are frequently talking about.
 Ignore pleasantries, greetings, and generic comments. Focus on the core subject matter.

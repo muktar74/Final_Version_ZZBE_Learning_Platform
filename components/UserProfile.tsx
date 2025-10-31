@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import { User, Toast } from '../types';
 import { ChevronLeftIcon, UserCircleIcon, PencilIcon, CameraIcon } from './icons';
@@ -42,7 +43,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onBack, a
         .getPublicUrl(data.path);
 
       setPhoto(publicUrl);
-      addToast("Profile picture updated.", 'success');
+      addToast("Profile picture updated. Save changes to confirm.", 'info');
     } catch (error: any) {
       addToast(`Error uploading image: ${error.message}`, 'error');
     }
@@ -70,7 +71,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, onBack, a
     <div>
         <button onClick={onBack} className="flex items-center text-sm font-medium text-zamzam-teal-600 hover:text-zamzam-teal-800 mb-6 transition">
             <ChevronLeftIcon className="h-5 w-5 mr-1" />
-            Back to Dashboard
+            Back
         </button>
         
         <div className="bg-white p-8 rounded-xl shadow-lg max-w-4xl mx-auto">

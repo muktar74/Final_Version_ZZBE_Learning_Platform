@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Course, Module, QuizQuestion, Toast, CourseCategory } from '../types';
 import { generateCourseContent, generateQuiz, generateCourseFromText } from '../services/geminiService';
-import { SparklesIcon, PlusIcon, TrashIcon, ArrowUpTrayIcon, VideoCameraIcon, BookOpenIcon as TextbookIcon } from './icons';
+import { SparklesIcon, PlusIcon, TrashIcon, ArrowUpTrayIcon, VideoCameraIcon, BookOpenIcon as TextbookIcon, CameraIcon } from './icons';
 import { supabase } from '../services/supabaseClient';
 import ConfirmModal from './ConfirmModal';
 
@@ -30,6 +29,8 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
   const [textbookFile, setTextbookFile] = useState<File | null>(null);
   const [textbookUrl, setTextbookUrl] = useState<string | undefined>();
   const [textbookName, setTextbookName] = useState<string | undefined>();
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string>('');
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -39,6 +40,7 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
   const modalBodyRef = useRef<HTMLDivElement>(null);
   const pdfGeneratorInputRef = useRef<HTMLInputElement>(null);
   const textbookInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const handleClose = () => {
     // Clean up any temporary blob URLs to prevent memory leaks
@@ -47,6 +49,12 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
             URL.revokeObjectURL(module.content);
         }
     });
+    if (imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(imageUrl);
+    }
+    if (textbookUrl && textbookUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(textbookUrl);
+    }
     onClose();
   };
 
@@ -61,6 +69,7 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
         setQuiz(course.quiz);
         setTextbookUrl(course.textbookUrl);
         setTextbookName(course.textbookName);
+        setImageUrl(course.imageUrl);
       } else {
         // Reset form for new course
         setTitle('');
@@ -71,8 +80,10 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
         setQuiz([]);
         setTextbookUrl(undefined);
         setTextbookName(undefined);
+        setImageUrl('');
       }
       setTextbookFile(null);
+      setImageFile(null);
       setIsSaving(false);
       setIsGenerating(false);
     }
@@ -318,33 +329,68 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
     }
     setTextbookFile(file);
     setTextbookName(file.name);
+    if (textbookUrl && textbookUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(textbookUrl);
+    }
     setTextbookUrl(URL.createObjectURL(file)); // For preview purposes
   };
 
   const handleRemoveTextbook = () => {
       setTextbookFile(null);
       setTextbookName(undefined);
+      if (textbookUrl && textbookUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(textbookUrl);
+      }
       setTextbookUrl(undefined);
       if(textbookInputRef.current) textbookInputRef.current.value = "";
   };
   
-  const uploadFile = async (file: File, oldUrl: string | undefined): Promise<{url: string; name: string}> => {
-      // 1. Delete the old file if it exists and is a Supabase storage URL
-      if (oldUrl && oldUrl.includes(supabase.storage.from('assets').getPublicUrl('').data.publicUrl)) {
-          try {
-              const pathName = new URL(oldUrl).pathname;
-              const bucketName = 'assets';
-              const searchString = `/storage/v1/object/public/${bucketName}/`;
-              if (pathName.includes(searchString)) {
-                  const path = decodeURIComponent(pathName.substring(pathName.indexOf(searchString) + searchString.length));
-                  await supabase.storage.from(bucketName).remove([path]);
-              }
-          } catch(e) {
-              console.error("Could not parse or delete old file URL:", oldUrl, e);
-          }
-      }
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    if (imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(imageUrl);
+    }
+    setImageUrl('');
+    if(imageInputRef.current) imageInputRef.current.value = "";
+  };
 
-      // 2. Upload the new file
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        addToast('Invalid file type. Please upload an image.', 'error');
+        return;
+    }
+    if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        addToast("Image file is too large. Please use a file smaller than 2MB.", 'error');
+        return;
+    }
+    if (imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(imageUrl);
+    }
+    setImageFile(file);
+    setImageUrl(URL.createObjectURL(file));
+  };
+  
+  const getStoragePathFromUrl = (url: string | undefined): string | null => {
+      if (!url || !url.includes('supabase.co')) return null;
+      try {
+          const urlObject = new URL(url);
+          const pathName = urlObject.pathname;
+          const bucketName = 'assets';
+          const searchString = `/storage/v1/object/public/${bucketName}/`;
+          
+          if (pathName.includes(searchString)) {
+              return decodeURIComponent(pathName.substring(pathName.indexOf(searchString) + searchString.length));
+          }
+          return null;
+      } catch (e) {
+          console.error("Could not parse URL for storage path:", url, e);
+          return null;
+      }
+  };
+
+  const uploadFile = async (file: File): Promise<{url: string; name: string}> => {
       addToast(`Uploading ${file.name}...`, 'info');
       const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
       const filePath = `public/${Date.now()}-${safeFileName}`;
@@ -353,6 +399,17 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
       
       const { data: urlData } = supabase.storage.from('assets').getPublicUrl(data.path);
       return { url: urlData.publicUrl, name: file.name };
+  };
+
+  const deleteFileFromStorage = async (url: string | undefined) => {
+    const path = getStoragePathFromUrl(url);
+    if (path) {
+        const { error } = await supabase.storage.from('assets').remove([path]);
+        if (error) {
+            console.error(`Could not delete old file from storage: ${path}`, error);
+            addToast(`Warning: Failed to delete old file at ${path}`, 'error');
+        }
+    }
   };
 
 
@@ -375,32 +432,61 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
     addToast("Saving course... please wait.", "info");
 
     try {
+        // Handle Image
+        let finalImageUrl = course?.imageUrl || '';
+        if (imageFile) { // New image uploaded, replace old one
+            await deleteFileFromStorage(course?.imageUrl);
+            const { url } = await uploadFile(imageFile);
+            finalImageUrl = url;
+        } else if (!imageUrl && course?.imageUrl) { // Image was explicitly removed
+             await deleteFileFromStorage(course.imageUrl);
+             finalImageUrl = ''; // Set to empty string
+        }
+
+        // Handle Textbook
         let finalTbookUrl = course?.textbookUrl;
         let finalTbookName = course?.textbookName;
-
         if (textbookFile) {
-            const { url, name } = await uploadFile(textbookFile, course?.textbookUrl);
+            await deleteFileFromStorage(course?.textbookUrl);
+            const { url, name } = await uploadFile(textbookFile);
             finalTbookUrl = url;
             finalTbookName = name;
-        } else if (!textbookUrl && course?.textbookUrl) {
-            // This case means the user removed the textbook without adding a new one.
-            await uploadFile(new File([], ""), course.textbookUrl); // Dummy file to trigger deletion
+        } else if (!textbookUrl && course?.textbookUrl) { // Textbook was explicitly removed
+            await deleteFileFromStorage(course.textbookUrl);
             finalTbookUrl = undefined;
             finalTbookName = undefined;
         }
-
-        const finalModules: Module[] = await Promise.all(
-            modules.map(async (mod): Promise<Module> => {
-                const { file, ...baseModule } = mod;
-
-                if (baseModule.type === 'video' && baseModule.videoType === 'upload' && file) {
-                    const { url } = await uploadFile(file, mod.id.startsWith('m-new-') ? undefined : course?.modules.find(m => m.id === mod.id)?.content);
-                    return { ...baseModule, content: url };
-                }
-                
-                return baseModule;
-            })
+        
+        // Handle Video Modules
+        const finalModules: Module[] = [];
+        const oldUploadedVideoUrls = new Set(
+            course?.modules
+                .filter(m => m.type === 'video' && m.videoType === 'upload' && m.content)
+                .map(m => m.content) || []
         );
+        const newUploadedVideoUrls = new Set<string>();
+
+        for (const mod of modules) {
+            const { file, ...baseModule } = mod;
+            if (baseModule.type === 'video' && baseModule.videoType === 'upload' && file) {
+                // New video file to upload for a module
+                const { url } = await uploadFile(file);
+                finalModules.push({ ...baseModule, content: url });
+                newUploadedVideoUrls.add(url);
+            } else {
+                // No new file, just keep existing module data
+                finalModules.push(baseModule);
+                if (baseModule.type === 'video' && baseModule.videoType === 'upload' && baseModule.content) {
+                    newUploadedVideoUrls.add(baseModule.content);
+                }
+            }
+        }
+        
+        // Determine which old videos were removed and delete them from storage
+        const urlsToDelete = [...oldUploadedVideoUrls].filter(url => !newUploadedVideoUrls.has(url));
+        for (const url of urlsToDelete) {
+            await deleteFileFromStorage(url);
+        }
 
         const finalCourse: Course = {
             id: course?.id || '',
@@ -410,7 +496,7 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
             passingScore,
             modules: finalModules,
             quiz,
-            imageUrl: course?.imageUrl || `https://picsum.photos/seed/${title.replace(/\s/g, '')}/600/400`,
+            imageUrl: finalImageUrl,
             reviews: course?.reviews || [],
             discussion: course?.discussion || [],
             textbookUrl: finalTbookUrl, 
@@ -480,16 +566,43 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
                 </div>
 
                 {/* Course Details */}
-                <div className="mb-4">
-                  <label htmlFor="courseTitle" className="block text-sm font-medium text-slate-700 mb-1">Course Title</label>
-                  <input type="text" id="courseTitle" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <div className="md:col-span-2 space-y-4">
+                        <div>
+                            <label htmlFor="courseTitle" className="block text-sm font-medium text-slate-700 mb-1">Course Title</label>
+                            <input type="text" id="courseTitle" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
+                        </div>
+                         <div>
+                            <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                            <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={5} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required ></textarea>
+                        </div>
+                    </div>
+                    <div>
+                        <label htmlFor="imageUpload" className="block text-sm font-medium text-slate-700 mb-1">Cover Image</label>
+                        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-md">
+                            <div className="space-y-1 text-center">
+                                {imageUrl ? (
+                                    <div className="relative group">
+                                      <img src={imageUrl} alt="Course preview" className="mx-auto h-32 w-auto object-cover rounded-md" />
+                                      <button type="button" onClick={handleRemoveImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <TrashIcon className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                ) : (
+                                    <CameraIcon className="mx-auto h-12 w-12 text-slate-400" />
+                                )}
+                                <div className="flex text-sm text-slate-600 justify-center">
+                                    <label htmlFor="image-upload-input" className="relative cursor-pointer bg-white rounded-md font-medium text-zamzam-teal-600 hover:text-zamzam-teal-500 focus-within:outline-none">
+                                        <span>{imageUrl ? 'Change image' : 'Upload an image'}</span>
+                                        <input id="image-upload-input" ref={imageInputRef} onChange={handleImageSelect} name="image-upload-input" type="file" className="sr-only" accept="image/png, image/jpeg" />
+                                    </label>
+                                </div>
+                                <p className="text-xs text-slate-500">PNG, JPG up to 2MB</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="mb-4">
-                  <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                  <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required ></textarea>
-                </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
                     <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">Category</label>

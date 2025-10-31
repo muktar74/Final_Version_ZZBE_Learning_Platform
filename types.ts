@@ -35,7 +35,7 @@ export interface Module {
 
 export interface DiscussionPost {
   id:string;
-  authorId: string;
+  author_id: string;
   authorName: string;
   timestamp: string;
   text: string;
@@ -44,7 +44,7 @@ export interface DiscussionPost {
 
 export interface Review {
   id: string;
-  authorId: string;
+  author_id: string;
   authorName: string;
   rating: number;
   comment: string;

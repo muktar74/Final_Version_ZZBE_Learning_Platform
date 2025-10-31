@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Course } from '../types';
 import { CheckCircleIcon, StarIcon } from './icons';
@@ -8,6 +7,7 @@ interface CourseCardProps {
   progress: {
       completedModules: string[];
       quizScore: number | null;
+      completionDate?: string;
   };
   onSelectCourse: (course: Course) => void;
 }
@@ -27,28 +27,34 @@ const StarRating: React.FC<{ rating: number, totalRatings: number }> = ({ rating
     );
 };
 
-const CourseCard: React.FC<CourseCardProps> = ({ course, progress, onSelectCourse }) => {
+const CourseCard: React.FC<CourseCardProps> = React.memo(({ course, progress, onSelectCourse }) => {
     const totalModules = course.modules.length;
     const completedModules = progress.completedModules.length;
     const progressPercentage = totalModules > 0 ? (completedModules / totalModules) * 100 : 0;
-    const isCompleted = progress.quizScore !== null;
-    
+    const isCompleted = !!progress?.completionDate;
+
     const averageRating = course.reviews.length > 0 
         ? course.reviews.reduce((acc, review) => acc + review.rating, 0) / course.reviews.length
         : 0;
 
   return (
     <div 
-      className="bg-white rounded-xl shadow-lg overflow-hidden transform hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col group"
+      className="bg-white rounded-xl shadow-lg overflow-hidden transform hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer flex flex-col group"
       onClick={() => onSelectCourse(course)}
       role="button"
       tabIndex={0}
       aria-label={`Select course: ${course.title}`}
     >
       <div className="relative">
-        <img className="w-full h-48 object-cover" src={course.imageUrl} alt={course.title} />
+        <img 
+            className="w-full h-48 object-cover bg-slate-200" 
+            src={course.imageUrl || `https://via.placeholder.com/600x400.png?text=${encodeURIComponent(course.title)}`} 
+            alt={course.title} 
+            loading="lazy"
+            onError={(e) => { e.currentTarget.src = `https://via.placeholder.com/600x400.png?text=${encodeURIComponent(course.title)}` }}
+        />
         {isCompleted && (
-            <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center space-x-1">
+            <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center space-x-1 shadow">
                 <CheckCircleIcon className="w-4 h-4" />
                 <span>Completed</span>
             </div>
@@ -57,7 +63,7 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, progress, onSelectCours
       <div className="p-6 flex-grow flex flex-col">
         <p className="text-xs font-semibold text-zamzam-teal-600 uppercase mb-1">{course.category || 'General'}</p>
         <h3 className="text-xl font-bold text-slate-800 mb-2 group-hover:text-zamzam-teal-600 transition-colors">{course.title}</h3>
-        <p className="text-slate-600 text-sm flex-grow">{course.description}</p>
+        <p className="text-slate-600 text-sm flex-grow line-clamp-3">{course.description}</p>
         
         <div className="mt-4">
             <StarRating rating={averageRating} totalRatings={course.reviews.length} />
@@ -78,6 +84,6 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, progress, onSelectCours
       </div>
     </div>
   );
-};
+});
 
 export default CourseCard;

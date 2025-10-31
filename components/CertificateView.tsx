@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { CertificateData, Review, Toast } from '../types';
 import { ChevronLeftIcon, StarIcon, BookOpenIcon as DownloadIcon } from './icons';
@@ -11,7 +10,7 @@ declare const jspdf: any;
 interface CertificateViewProps {
   data: CertificateData;
   onBackToDashboard: () => void;
-  onRateCourse: (courseId: string, rating: number, comment: string) => void;
+  onRateCourse: (courseId: string, rating: number, comment: string) => Promise<void>;
   addToast: (message: string, type: Toast['type']) => void;
   userRating?: number;
   userReview?: Review;
@@ -21,6 +20,7 @@ const CertificateView: React.FC<CertificateViewProps> = ({ data, onBackToDashboa
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedRating, setSelectedRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
@@ -82,9 +82,16 @@ const CertificateView: React.FC<CertificateViewProps> = ({ data, onBackToDashboa
       }
   };
 
-  const handleRateAndComment = () => {
+  const handleRateAndComment = async () => {
       if (selectedRating > 0 && comment.trim() !== '') {
-          onRateCourse(data.courseId, selectedRating, comment);
+          setIsSubmittingReview(true);
+          try {
+            await onRateCourse(data.courseId, selectedRating, comment);
+          } catch (e) {
+            // Error toast is handled by parent
+          } finally {
+            setIsSubmittingReview(false);
+          }
       } else {
           addToast('Please select a rating and write a comment.', 'error');
       }
@@ -142,10 +149,10 @@ const CertificateView: React.FC<CertificateViewProps> = ({ data, onBackToDashboa
            />
            <button
              onClick={handleRateAndComment}
-             disabled={!selectedRating || !comment.trim()}
+             disabled={!selectedRating || !comment.trim() || isSubmittingReview}
              className="mt-4 bg-zamzam-teal-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-zamzam-teal-700 transition disabled:bg-slate-300"
            >
-             Submit Review
+             {isSubmittingReview ? 'Submitting...' : 'Submit Review'}
            </button>
       </div>
     );

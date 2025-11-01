@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { AiMessage } from '../types';
 import { getAiChatResponse } from '../services/geminiService';
@@ -7,7 +8,7 @@ import { SparklesIcon, PaperAirplaneIcon, BookOpenIcon, XMarkIcon } from './icon
 interface AiAssistantProps {
     history: AiMessage[];
     setHistory: React.Dispatch<React.SetStateAction<AiMessage[]>>;
-    courseContext?: {title: string, description: string};
+    courseContext?: {title: string, description: string, modules: string};
 }
 
 const AiAssistant: React.FC<AiAssistantProps> = ({ history, setHistory, courseContext }) => {

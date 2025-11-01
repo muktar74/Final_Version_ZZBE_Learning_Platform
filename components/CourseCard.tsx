@@ -10,6 +10,7 @@ interface CourseCardProps {
       completionDate?: string;
   };
   onSelectCourse: (course: Course) => void;
+  isLarge?: boolean;
 }
 
 const StarRating: React.FC<{ rating: number, totalRatings: number }> = ({ rating, totalRatings }) => {
@@ -27,15 +28,21 @@ const StarRating: React.FC<{ rating: number, totalRatings: number }> = ({ rating
     );
 };
 
-const CourseCard: React.FC<CourseCardProps> = React.memo(({ course, progress, onSelectCourse }) => {
+const CourseCard: React.FC<CourseCardProps> = React.memo(({ course, progress, onSelectCourse, isLarge = false }) => {
     const totalModules = course.modules.length;
     const completedModules = progress.completedModules.length;
     const progressPercentage = totalModules > 0 ? (completedModules / totalModules) * 100 : 0;
     const isCompleted = !!progress?.completionDate;
-
-    const averageRating = course.reviews.length > 0 
-        ? course.reviews.reduce((acc, review) => acc + review.rating, 0) / course.reviews.length
+    
+    const reviews = course.reviews || []; // Add fallback for safety
+    const averageRating = reviews.length > 0 
+        ? reviews.reduce((acc, review) => acc + review.rating, 0) / reviews.length
         : 0;
+        
+    const handleViewDetailsClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.stopPropagation(); // Prevent the parent div's onClick from firing
+        onSelectCourse(course);
+    };
 
   return (
     <div 
@@ -47,7 +54,7 @@ const CourseCard: React.FC<CourseCardProps> = React.memo(({ course, progress, on
     >
       <div className="relative">
         <img 
-            className="w-full h-48 object-cover bg-slate-200" 
+            className={`w-full ${isLarge ? 'h-64' : 'h-48'} object-cover bg-slate-200`} 
             src={course.imageUrl || `https://via.placeholder.com/600x400.png?text=${encodeURIComponent(course.title)}`} 
             alt={course.title} 
             loading="lazy"
@@ -62,11 +69,11 @@ const CourseCard: React.FC<CourseCardProps> = React.memo(({ course, progress, on
       </div>
       <div className="p-6 flex-grow flex flex-col">
         <p className="text-xs font-semibold text-zamzam-teal-600 uppercase mb-1">{course.category || 'General'}</p>
-        <h3 className="text-xl font-bold text-slate-800 mb-2 group-hover:text-zamzam-teal-600 transition-colors">{course.title}</h3>
-        <p className="text-slate-600 text-sm flex-grow line-clamp-3">{course.description}</p>
+        <h3 className={`font-bold text-slate-800 mb-2 group-hover:text-zamzam-teal-600 transition-colors ${isLarge ? 'text-2xl' : 'text-xl'}`}>{course.title}</h3>
+        <p className={`text-slate-600 text-sm flex-grow ${isLarge ? 'line-clamp-4' : 'line-clamp-3'}`}>{course.description}</p>
         
         <div className="mt-4">
-            <StarRating rating={averageRating} totalRatings={course.reviews.length} />
+            <StarRating rating={averageRating} totalRatings={reviews.length} />
         </div>
 
         <div className="mt-4">
@@ -80,6 +87,15 @@ const CourseCard: React.FC<CourseCardProps> = React.memo(({ course, progress, on
                     style={{width: `${progressPercentage}%`}}
                 ></div>
             </div>
+        </div>
+        <div className="mt-6">
+            <button
+                onClick={handleViewDetailsClick}
+                className="w-full bg-zamzam-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-zamzam-teal-700 transition duration-300"
+                aria-label={`View details for ${course.title}`}
+            >
+                View Details
+            </button>
         </div>
       </div>
     </div>

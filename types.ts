@@ -138,3 +138,26 @@ export interface Badge {
     icon: React.FC<IconProps>;
     points: number;
 }
+
+export type AdminTab = 'courses' | 'users' | 'analytics' | 'reports' | 'notifications' | 'resources' | 'categories' | 'leaderboard';
+export type View = 'dashboard' | 'course' | 'certificate' | 'admin' | 'leaderboard' | 'resources' | 'courses' | 'profile' | 'certificates';
+
+// Mapper function to convert Supabase snake_case to our camelCase Course type
+export const mapSupabaseCourse = (data: any): Course => {
+    if (!data) return {} as Course;
+    return {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        modules: data.modules || [],
+        quiz: data.quiz || [],
+        passingScore: data.passing_score,
+        imageUrl: data.image_url,
+        reviews: data.reviews || [],
+        discussion: data.discussion || [],
+        textbookUrl: data.textbook_url,
+        textbookName: data.textbook_name,
+        createdAt: data.created_at,
+    };
+};

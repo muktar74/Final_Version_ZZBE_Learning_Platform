@@ -1,61 +1,16 @@
-import React, { useState } from 'react';
-import { Course, AiMessage } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Course, AiMessage, mapSupabaseCourse } from '../types';
 import CourseCard from './CourseCard';
 import Footer from './Footer';
 import PublicHeader from './PublicHeader';
 import { BookOpenIcon, CheckCircleIcon, StarIcon, ShieldCheckIcon, TrophyIcon, UsersIcon } from './icons';
 import AiAssistant from './AiAssistant';
+import { supabase } from '../services/supabaseClient';
+import Spinner from './Spinner';
 
 interface HomePageProps {
   setPage: (page: 'home' | 'login' | 'register') => void;
 }
-
-const featuredCourses: Course[] = [
-  {
-    id: 'featured-1',
-    title: 'Digital Marketing in Finance',
-    description: 'Learn how to apply modern digital marketing strategies within the financial sector to reach and engage customers.',
-    imageUrl: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=600&auto=format&fit=crop',
-    category: 'Digital Banking & Fintech',
-    passingScore: 70,
-    modules: [
-        {
-            id: 'module-kpi-1',
-            title: 'Key Performance Indicators',
-            content: '<p>Measuring the success of digital marketing campaigns is crucial. <strong>Key Performance Indicators (KPIs)</strong> help quantify the effectiveness of your efforts.</p><ul><li><strong>Cost Per Acquisition (CPA):</strong> The cost to acquire a new client.</li><li><strong>Customer Lifetime Value (CLV):</strong> The total revenue a business can expect from a single customer account.</li><li><strong>Conversion Rate:</strong> The percentage of users who complete a desired action, like a loan application.</li><li><strong>Return on Ad Spend (ROAS):</strong> Measures the gross revenue generated for every dollar spent on advertising.</li></ul><p>Tracking these metrics allows for data-driven decisions and optimization of marketing budgets.</p>',
-            type: 'text'
-        }
-    ],
-    quiz: [],
-    reviews: [],
-    discussion: [],
-  },
-  {
-    id: 'featured-2',
-    title: 'Cybersecurity for Banking',
-    description: 'Understand the critical threats to the banking industry and learn the best practices to secure financial data and systems.',
-    imageUrl: 'https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?q=80&w=600&auto=format&fit=crop',
-    category: 'Risk Management in IFB',
-    passingScore: 70,
-    modules: [],
-    quiz: [],
-    reviews: [],
-    discussion: [],
-  },
-  {
-    id: 'featured-3',
-    title: 'Advanced Islamic Finance (IFB)',
-    description: 'A deep dive into complex Islamic financial instruments, structures, and modern applications in the banking sector.',
-    imageUrl: 'https://images.unsplash.com/photo-1627895513511-23521b6a1f3b?q=80&w=600&auto=format&fit=crop',
-    category: 'General Islamic Finance',
-    passingScore: 70,
-    modules: [],
-    quiz: [],
-    reviews: [],
-    discussion: [],
-  }
-];
-
 
 const Feature: React.FC<{ icon: React.ReactNode; title: string; description: string }> = ({ icon, title, description }) => (
     <div className="text-center">
@@ -70,6 +25,37 @@ const Feature: React.FC<{ icon: React.ReactNode; title: string; description: str
 
 const HomePage: React.FC<HomePageProps> = ({ setPage }) => {
   const [aiChatHistory, setAiChatHistory] = useState<AiMessage[]>([]);
+  const [featuredCourses, setFeaturedCourses] = useState<Course[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchFeaturedCourses = async () => {
+      try {
+        setIsLoading(true);
+        // The previous query joined reviews, which likely failed due to RLS for anon users.
+        // This new query just gets the public course data. The CourseCard component will gracefully handle the missing reviews array.
+        const { data, error } = await supabase
+          .from('courses')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        if (error) {
+          throw error;
+        }
+        
+        setFeaturedCourses((data?.map(mapSupabaseCourse) as Course[]) || []);
+      } catch (error) {
+        console.error("Error fetching featured courses:", error);
+        // Silently fail, so the section just doesn't show up.
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchFeaturedCourses();
+  }, []);
+
 
   return (
     <div className="bg-white font-sans text-slate-800">
@@ -182,19 +168,29 @@ const HomePage: React.FC<HomePageProps> = ({ setPage }) => {
         <section className="bg-white py-16 sm:py-20">
              <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-12">
-                    <h2 className="text-3xl font-bold text-slate-800">Featured Courses</h2>
-                    <p className="text-lg text-slate-600 mt-2">Get a glimpse of the valuable knowledge waiting for you.</p>
+                    <h2 className="text-3xl font-bold text-zamzam-teal-800">Featured Courses</h2>
+                    <p className="text-lg text-slate-600 mt-2">Get a glimpse of our most recently added training material.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {featuredCourses.map(course => (
-                    <CourseCard
-                    key={course.id}
-                    course={course}
-                    progress={{ completedModules: [], quizScore: null }}
-                    onSelectCourse={() => setPage('login')} // Prompt login on click
-                    />
-                ))}
-                </div>
+                {isLoading ? (
+                    <div className="flex justify-center items-center py-10">
+                        <Spinner />
+                    </div>
+                ) : featuredCourses.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {featuredCourses.map(course => (
+                            <CourseCard
+                            key={course.id}
+                            course={course}
+                            progress={{ completedModules: [], quizScore: null }}
+                            onSelectCourse={() => setPage('login')} // Prompt login on click
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-10 text-slate-500">
+                        <p>New courses are coming soon. Please check back later!</p>
+                    </div>
+                )}
              </div>
         </section>
       </main>

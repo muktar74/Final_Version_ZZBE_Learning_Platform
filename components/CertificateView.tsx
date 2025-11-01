@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CertificateData, Review, Toast } from '../types';
-import { ChevronLeftIcon, StarIcon, BookOpenIcon as DownloadIcon } from './icons';
+import { CertificateData, Review, Toast, User } from '../types';
+import { ChevronLeftIcon, StarIcon, BookOpenIcon as DownloadIcon, ShareIcon, LinkedinIcon, FacebookIcon, TwitterIcon } from './icons';
+import { supabase } from '../services/supabaseClient';
 
 // Declare global variables for libraries loaded via script tags
 declare const html2canvas: any;
@@ -9,6 +10,7 @@ declare const jspdf: any;
 
 interface CertificateViewProps {
   data: CertificateData;
+  currentUser: User;
   onBackToDashboard: () => void;
   onRateCourse: (courseId: string, rating: number, comment: string) => Promise<void>;
   addToast: (message: string, type: Toast['type']) => void;
@@ -16,20 +18,27 @@ interface CertificateViewProps {
   userReview?: Review;
 }
 
-const CertificateView: React.FC<CertificateViewProps> = ({ data, onBackToDashboard, onRateCourse, addToast, userRating, userReview }) => {
+const CertificateView: React.FC<CertificateViewProps> = ({ data, currentUser, onBackToDashboard, onRateCourse, addToast, userRating, userReview }) => {
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedRating, setSelectedRating] = useState(0);
   const [comment, setComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [showShareOptions, setShowShareOptions] = useState(false);
   const downloadRef = useRef<HTMLDivElement>(null);
+  const shareRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (downloadRef.current && !downloadRef.current.contains(event.target as Node)) {
         setShowDownloadOptions(false);
+      }
+      if (shareRef.current && !shareRef.current.contains(event.target as Node)) {
+        setShowShareOptions(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -81,6 +90,62 @@ const CertificateView: React.FC<CertificateViewProps> = ({ data, onBackToDashboa
         setIsDownloading(false);
       }
   };
+  
+  const handleShare = async (platform: 'linkedin' | 'twitter' | 'facebook') => {
+    setIsSharing(true);
+    setShowShareOptions(false);
+    addToast('Preparing your certificate for sharing...', 'info');
+
+    try {
+        let publicUrl = shareUrl;
+
+        // If we haven't generated the shareable image URL yet
+        if (!publicUrl) {
+            const certificateElement = document.getElementById('certificate-to-print');
+            if (!certificateElement) throw new Error("Certificate element not found.");
+
+            const canvas = await html2canvas(certificateElement, { scale: 2, useCORS: true });
+            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+            if (!blob) throw new Error("Failed to create image blob.");
+
+            const filePath = `public/shared-certificates/${currentUser.id}-${data.courseId}.png`;
+            
+            // Upsert to avoid re-uploading, overwrites if exists.
+            const { error: uploadError } = await supabase.storage.from('assets').upload(filePath, blob, { upsert: true });
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = supabase.storage.from('assets').getPublicUrl(filePath);
+            publicUrl = urlData.publicUrl;
+            setShareUrl(publicUrl); // Cache it for other share buttons
+        }
+
+        const text = `I'm proud to have earned a certificate for completing the '${data.courseName}' course on the Zamzam Bank E-Learning Platform! #ZamzamBank #IslamicFinance #ProfessionalDevelopment`;
+        const encodedText = encodeURIComponent(text);
+        const encodedUrl = encodeURIComponent(publicUrl!);
+
+        let shareLink = '';
+        switch (platform) {
+            case 'linkedin':
+                shareLink = `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+                break;
+            case 'twitter':
+                shareLink = `https://twitter.com/intent/tweet?text=${encodedText}`;
+                break;
+            case 'facebook':
+                shareLink = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+                break;
+        }
+
+        window.open(shareLink, '_blank', 'noopener,noreferrer');
+        
+    } catch (error: any) {
+        console.error("Sharing error:", error);
+        addToast(`Could not share certificate: ${error.message}`, 'error');
+    } finally {
+        setIsSharing(false);
+    }
+  };
+
 
   const handleRateAndComment = async () => {
       if (selectedRating > 0 && comment.trim() !== '') {
@@ -166,23 +231,41 @@ const CertificateView: React.FC<CertificateViewProps> = ({ data, onBackToDashboa
           <ChevronLeftIcon className="h-5 w-5 mr-1" />
           Back to Dashboard
         </button>
-
-        <div className="relative" ref={downloadRef}>
-            <button 
-                onClick={() => setShowDownloadOptions(prev => !prev)}
-                disabled={isDownloading}
-                className="flex items-center bg-zamzam-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-zamzam-teal-700 transition disabled:bg-slate-400"
-            >
-                <DownloadIcon className="h-5 w-5 mr-2" />
-                {isDownloading ? 'Generating...' : 'Download Certificate'}
-            </button>
-            {showDownloadOptions && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-slate-200 z-10">
-                    <button onClick={() => handleDownload('pdf')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Download as PDF</button>
-                    <button onClick={() => handleDownload('png')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Download as PNG</button>
-                    <button onClick={() => handleDownload('jpg')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Download as JPG</button>
-                </div>
-            )}
+        <div className="flex items-center space-x-2">
+            <div className="relative" ref={downloadRef}>
+                <button 
+                    onClick={() => setShowDownloadOptions(prev => !prev)}
+                    disabled={isDownloading}
+                    className="flex items-center bg-zamzam-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-zamzam-teal-700 transition disabled:bg-slate-400"
+                >
+                    <DownloadIcon className="h-5 w-5 mr-2" />
+                    {isDownloading ? 'Generating...' : 'Download'}
+                </button>
+                {showDownloadOptions && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-slate-200 z-10">
+                        <button onClick={() => handleDownload('pdf')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Download as PDF</button>
+                        <button onClick={() => handleDownload('png')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Download as PNG</button>
+                        <button onClick={() => handleDownload('jpg')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Download as JPG</button>
+                    </div>
+                )}
+            </div>
+             <div className="relative" ref={shareRef}>
+                <button 
+                    onClick={() => setShowShareOptions(prev => !prev)}
+                    disabled={isSharing}
+                    className="flex items-center bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition disabled:bg-slate-400"
+                >
+                    <ShareIcon className="h-5 w-5 mr-2" />
+                    {isSharing ? 'Preparing...' : 'Share'}
+                </button>
+                {showShareOptions && (
+                    <div className="absolute right-0 mt-2 w-52 bg-white rounded-md shadow-lg border border-slate-200 z-10">
+                        <button onClick={() => handleShare('linkedin')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2"><LinkedinIcon className="h-5 w-5 text-[#0077b5]"/><span>Share on LinkedIn</span></button>
+                        <button onClick={() => handleShare('twitter')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2"><TwitterIcon className="h-5 w-5 text-[#1DA1F2]"/><span>Share on Twitter</span></button>
+                        <button onClick={() => handleShare('facebook')} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2"><FacebookIcon className="h-5 w-5 text-[#1877F2]"/><span>Share on Facebook</span></button>
+                    </div>
+                )}
+            </div>
         </div>
       </div>
 

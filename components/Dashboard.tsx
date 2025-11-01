@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Course, UserProgress, User, Badge, CourseCategory } from '../types';
 import CourseCard from './CourseCard';
@@ -61,8 +62,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
 
   const courseCounts = useMemo(() => {
     const progressValues = Object.values(userProgress);
-    const inProgress = progressValues.filter(p => p.completedModules.length > 0 && !p.completionDate).length;
-    const completed = progressValues.filter(p => !!p.completionDate).length;
+    const inProgress = progressValues.filter((p: UserProgress[string]) => p.completedModules.length > 0 && !p.completionDate).length;
+    const completed = progressValues.filter((p: UserProgress[string]) => !!p.completionDate).length;
     return {
         all: courses.length,
         inProgress,
@@ -85,7 +86,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
   const recommendedCourses = useMemo(() => {
     const completedOrStartedCategories = new Set(
         Object.entries(userProgress)
-            .filter(([, progress]: [string, UserProgress[string]]) => progress.completedModules.length > 0 || progress.completionDate)
+            .filter(([, progress]: [string, UserProgress[string]]) => progress.completedModules.length > 0 || !!progress.completionDate)
             .map(([courseId]) => courses.find(c => c.id === courseId)?.category)
             .filter(Boolean)
     );
@@ -120,6 +121,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
     return recommendations.slice(0, 3);
   }, [courses, userProgress]);
 
+    const featuredCourses = useMemo(() => {
+        return [...courses]
+          .sort((a, b) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA;
+          })
+          .slice(0, 3);
+      }, [courses]);
 
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
@@ -142,10 +152,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
         // Category filter
         const categoryMatch = categoryFilter === 'all' || course.category === categoryFilter;
 
-        // Search query filter
-        const searchMatch = !searchQuery ||
-            course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            course.description.toLowerCase().includes(searchQuery.toLowerCase());
+        // Search query filter - IMPROVED
+        let searchMatch = true;
+        if (searchQuery.trim()) {
+            const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+            const courseText = `${course.title.toLowerCase()} ${course.description.toLowerCase()}`;
+            searchMatch = keywords.every(keyword => courseText.includes(keyword));
+        }
             
         return statusMatch && categoryMatch && searchMatch;
     });
@@ -199,6 +212,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user, courses, onSelectCourse, us
                     </button>
                 </div>
             </div>
+            
+            {showOverview && (
+                <div className="mb-12">
+                    <div className="text-center mb-8">
+                        <h3 className="text-3xl font-bold text-zamzam-teal-800">Featured Courses</h3>
+                        <p className="text-lg text-slate-600 mt-2">Get a glimpse of our most recently added training material.</p>
+                    </div>
+                    {courses.length > 0 ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                            {featuredCourses.length > 0 && (
+                                <div className="lg:col-span-2">
+                                    <CourseCard
+                                        key={featuredCourses[0].id}
+                                        course={featuredCourses[0]}
+                                        progress={userProgress[featuredCourses[0].id] || { completedModules: [], quizScore: null }}
+                                        onSelectCourse={() => onSelectCourse(featuredCourses[0])}
+                                        isLarge={true}
+                                    />
+                                </div>
+                            )}
+                            {featuredCourses.length > 1 && (
+                                <div className="lg:col-span-1 space-y-8">
+                                    {featuredCourses.slice(1).map(course => (
+                                        <CourseCard
+                                            key={course.id}
+                                            course={course}
+                                            progress={userProgress[course.id] || { completedModules: [], quizScore: null }}
+                                            onSelectCourse={() => onSelectCourse(course)}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="text-center py-10 text-slate-500 bg-white rounded-xl shadow">
+                            <p>New courses are coming soon. Please check back later!</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
 
             {recentlyViewedCourses.length > 0 && (
                 <div className="mb-12">

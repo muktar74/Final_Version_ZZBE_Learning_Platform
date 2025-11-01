@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Course, User, UserRole, AllUserProgress, Toast, DiscussionPost, UserProgress } from '../../types';
 import { BookOpenIcon, UsersIcon, CheckCircleIcon, StarIcon, SparklesIcon } from '../icons';
@@ -97,18 +98,26 @@ const AdminAnalytics: React.FC<AdminAnalyticsProps> = ({ courses, users, allUser
                     <SparklesIcon className="h-5 w-5 mr-2" />
                     {isAnalyzing ? 'Analyzing...' : 'Analyze Topics'}
                 </button>
-                { (isAnalyzing || analyzedTopics.length > 0) && (
-                    <div className="mt-6">
-                        <h4 className="font-semibold text-slate-700">Analysis Results:</h4>
-                         {isAnalyzing && <p className="text-slate-500">Processing data, this may take a moment...</p>}
-                        {analyzedTopics.length > 0 && (
-                            <ul className="list-disc list-inside mt-2 space-y-1 text-slate-600">
-                                {analyzedTopics.map((topic, index) => <li key={index}>{topic}</li>)}
-                            </ul>
-                        )}
-                         {analyzedTopics.length === 0 && !isAnalyzing && <p className="text-slate-500 mt-2">No topics found or analysis not yet run.</p>}
-                    </div>
-                )}
+                
+                <div className="mt-6 pt-6 border-t">
+                    <h4 className="font-semibold text-slate-700 mb-3">Analysis Results:</h4>
+                    {isAnalyzing ? (
+                        <div className="flex items-center space-x-2 text-slate-600">
+                            <div className="w-5 h-5 rounded-full animate-spin border-2 border-solid border-zamzam-teal-500 border-t-transparent"></div>
+                            <span>AI is processing all discussion data. This may take a few moments...</span>
+                        </div>
+                    ) : analyzedTopics.length > 0 ? (
+                        <div className="flex flex-wrap gap-3">
+                            {analyzedTopics.map((topic, index) => (
+                                <div key={index} className="bg-zamzam-teal-50 text-zamzam-teal-800 py-2 px-3 rounded-lg text-sm font-semibold border border-zamzam-teal-100">
+                                    {topic}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-slate-500 text-sm italic">No topics found or analysis has not been run yet. Click the button above to start.</p>
+                    )}
+                </div>
             </div>
         </div>
     );

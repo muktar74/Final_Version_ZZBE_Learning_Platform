@@ -1,16 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, Notification } from '../types';
-import { BookOpenIcon, UserCircleIcon, LogoutIcon, BellIcon, XMarkIcon, TrophyIcon, UsersIcon } from './icons';
+import { User, Notification, UserRole, AdminTab } from '../types';
+import { BookOpenIcon, UserCircleIcon, LogoutIcon, BellIcon, XMarkIcon, UsersIcon, ChartBarIcon, DocumentTextIcon, TagIcon, TrophyIcon, Bars3Icon } from './icons';
 
 interface HeaderProps {
   user: User;
   notifications: Notification[];
   onMarkNotificationsRead: () => void;
   onLogout: () => void;
-  onNavigate: (view: 'dashboard' | 'admin' | 'leaderboard' | 'resources' | 'courses' | 'profile') => void;
+  onNavigate: (view: 'dashboard' | 'admin' | 'leaderboard' | 'resources' | 'courses' | 'profile' | 'certificates') => void;
+  activeAdminTab: AdminTab;
+  onNavigateAdminTab: (tab: AdminTab) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotificationsRead, onLogout, onNavigate }) => {
+const ADMIN_TABS_CONFIG = [
+    { id: 'courses', label: 'Courses', icon: <BookOpenIcon className="h-5 w-5"/> },
+    { id: 'users', label: 'Users', icon: <UsersIcon className="h-5 w-5"/> },
+    { id: 'categories', label: 'Categories', icon: <TagIcon className="h-5 w-5"/> },
+    { id: 'resources', label: 'Resources', icon: <BookOpenIcon className="h-5 w-5"/> },
+    { id: 'leaderboard', label: 'Leaderboard', icon: <TrophyIcon className="h-5 w-5"/> },
+    { id: 'analytics', label: 'Analytics', icon: <ChartBarIcon className="h-5 w-5"/> },
+    { id: 'reports', label: 'Reports', icon: <DocumentTextIcon className="h-5 w-5"/> },
+    { id: 'notifications', label: 'Notifications', icon: <BellIcon className="h-5 w-5"/> },
+] as const;
+
+
+const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotificationsRead, onLogout, onNavigate, activeAdminTab, onNavigateAdminTab }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -50,11 +64,22 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
     if (showNotifications) setShowNotifications(false);
   };
 
-  const handleNavigate = (view: 'dashboard' | 'admin' | 'leaderboard' | 'resources' | 'courses' | 'profile') => {
-    onNavigate(view);
+  const handleAdminNav = (tab: AdminTab) => {
+    onNavigate('admin');
+    onNavigateAdminTab(tab);
     setIsMobileMenuOpen(false);
-    closeAllDropdowns();
-  };
+  }
+  
+  const handleEmployeeNav = (view: 'dashboard' | 'courses' | 'leaderboard' | 'resources' | 'certificates') => {
+      onNavigate(view);
+      setIsMobileMenuOpen(false);
+  }
+
+  const handleProfileNav = () => {
+      onNavigate('profile');
+      setIsMobileMenuOpen(false);
+      closeAllDropdowns();
+  }
 
   const getRoleSpecificView = () => {
     return user.role === 'Admin' ? 'admin' : 'dashboard';
@@ -66,7 +91,7 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
         <div className="flex items-center justify-between h-20">
           <div 
             className="flex items-center space-x-3 cursor-pointer"
-            onClick={() => handleNavigate(getRoleSpecificView())}
+            onClick={() => onNavigate(getRoleSpecificView())}
             aria-label="Go to homepage"
           >
             <BookOpenIcon className="h-8 w-8 text-zamzam-teal-600" />
@@ -74,13 +99,27 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
               Zamzam Bank <span className="font-light hidden sm:inline">E-Learning</span>
             </h1>
           </div>
-          <nav className="hidden lg:flex items-center space-x-4">
-            {user.role === 'Employee' && (
+          <nav className="hidden lg:flex items-center space-x-1">
+            {user.role === UserRole.ADMIN ? (
+                 ADMIN_TABS_CONFIG.map(tab => (
+                    <button 
+                        key={tab.id}
+                        onClick={() => handleAdminNav(tab.id)}
+                        className={`text-sm font-semibold transition px-3 py-2 rounded-md flex items-center space-x-2 ${
+                            activeAdminTab === tab.id ? 'bg-zamzam-teal-50 text-zamzam-teal-700' : 'text-slate-600 hover:text-zamzam-teal-600'
+                        }`}
+                    >
+                      {React.cloneElement(tab.icon, { className: 'h-5 w-5' })}
+                      <span>{tab.label}</span>
+                    </button>
+                 ))
+            ) : (
               <>
-                <button onClick={() => handleNavigate('dashboard')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Dashboard</button>
-                <button onClick={() => handleNavigate('courses')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Courses</button>
-                <button onClick={() => handleNavigate('leaderboard')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Leaderboard</button>
-                <button onClick={() => handleNavigate('resources')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Resource Library</button>
+                <button onClick={() => handleEmployeeNav('dashboard')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Dashboard</button>
+                <button onClick={() => handleEmployeeNav('courses')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Courses</button>
+                <button onClick={() => handleEmployeeNav('certificates')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">My Certificates</button>
+                <button onClick={() => handleEmployeeNav('leaderboard')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Leaderboard</button>
+                <button onClick={() => handleEmployeeNav('resources')} className="text-sm font-semibold text-slate-600 hover:text-zamzam-teal-600 transition px-3 py-2 rounded-md">Resource Library</button>
               </>
             )}
           </nav>
@@ -129,7 +168,7 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
                         <ul>
                             <li>
-                                <button onClick={() => handleNavigate('profile')} className="w-full text-left flex items-center space-x-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                                <button onClick={handleProfileNav} className="w-full text-left flex items-center space-x-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                                     <UserCircleIcon className="h-5 w-5 text-slate-500" />
                                     <span>View Profile</span>
                                 </button>
@@ -148,9 +187,7 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
             {/* Mobile Menu Button */}
             <div className="lg:hidden">
                 <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 rounded-md hover:bg-slate-100" aria-label="Open menu">
-                    <svg className="h-6 w-6 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
+                    <Bars3Icon className="h-6 w-6 text-slate-600"/>
                 </button>
             </div>
           </div>
@@ -160,7 +197,7 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
       {/* Mobile Menu */}
       <div className={`fixed inset-0 bg-white z-40 transform ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'} transition-transform duration-300 ease-in-out lg:hidden`}>
         <div className="flex justify-between items-center h-20 px-4 border-b">
-             <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleNavigate(getRoleSpecificView())}>
+             <div className="flex items-center space-x-3 cursor-pointer" onClick={() => onNavigate(getRoleSpecificView())}>
                 <BookOpenIcon className="h-8 w-8 text-zamzam-teal-600" />
                 <h1 className="text-xl font-bold text-zamzam-teal-700">Zamzam E-Learning</h1>
              </div>
@@ -181,15 +218,23 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
                 </div>
             </div>
             <nav className="mt-4 flex flex-col space-y-2">
-                {user.role === 'Employee' && (
+                {user.role === UserRole.ADMIN ? (
+                    ADMIN_TABS_CONFIG.map(tab => (
+                        <button key={tab.id} onClick={() => handleAdminNav(tab.id)} className={`text-left font-semibold hover:bg-slate-100 p-3 rounded-md flex items-center space-x-3 ${activeAdminTab === tab.id ? 'text-zamzam-teal-700 bg-zamzam-teal-50' : 'text-slate-700'}`}>
+                           {React.cloneElement(tab.icon, { className: 'h-6 w-6' })}
+                           <span>{tab.label}</span>
+                        </button>
+                    ))
+                ) : (
                   <>
-                    <button onClick={() => handleNavigate('dashboard')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Dashboard</button>
-                    <button onClick={() => handleNavigate('courses')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Courses</button>
-                    <button onClick={() => handleNavigate('leaderboard')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Leaderboard</button>
-                    <button onClick={() => handleNavigate('resources')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Resource Library</button>
+                    <button onClick={() => handleEmployeeNav('dashboard')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Dashboard</button>
+                    <button onClick={() => handleEmployeeNav('courses')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Courses</button>
+                    <button onClick={() => handleEmployeeNav('certificates')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">My Certificates</button>
+                    <button onClick={() => handleEmployeeNav('leaderboard')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Leaderboard</button>
+                    <button onClick={() => handleEmployeeNav('resources')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md">Resource Library</button>
                   </>
                 )}
-                <button onClick={() => handleNavigate('profile')} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md border-t pt-4 mt-2">Profile</button>
+                <button onClick={handleProfileNav} className="text-left font-semibold text-slate-700 hover:bg-slate-100 p-3 rounded-md border-t pt-4 mt-2">Profile</button>
                 <button onClick={onLogout} className="text-left font-semibold text-red-600 hover:bg-red-50 p-3 rounded-md">Logout</button>
             </nav>
         </div>

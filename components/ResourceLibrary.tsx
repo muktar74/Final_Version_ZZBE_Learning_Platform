@@ -25,11 +25,12 @@ const ResourceLibrary: React.FC<ResourceLibraryProps> = ({ onBack, resources }) 
       filtered = filtered.filter(r => r.type === filter);
     }
     
-    if (searchQuery) {
-        filtered = filtered.filter(r => 
-            r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            r.description.toLowerCase().includes(searchQuery.toLowerCase())
-        );
+    if (searchQuery.trim()) {
+        const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+        filtered = filtered.filter(r => {
+            const resourceText = `${r.title.toLowerCase()} ${r.description.toLowerCase()}`;
+            return keywords.every(keyword => resourceText.includes(keyword));
+        });
     }
 
     return filtered;

@@ -14,7 +14,7 @@ interface CourseManagementProps {
   courseCategories: CourseCategory[];
 }
 
-type SortKey = 'title' | 'modules' | 'quiz';
+type SortKey = 'title' | 'modules' | 'quiz' | 'createdAt';
 type SortDirection = 'ascending' | 'descending';
 
 // Helper to map Supabase's snake_case to frontend's camelCase
@@ -39,7 +39,7 @@ const mapSupabaseCourseToCourse = (supabaseCourse: any): Course => {
 const CourseManagement: React.FC<CourseManagementProps> = ({ courses, setCourses, users, createNotification, addToast, courseCategories }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'title', direction: 'ascending' });
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'createdAt', direction: 'descending' });
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
@@ -74,6 +74,10 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses, setCourses
         case 'quiz':
           aValue = a.quiz.length;
           bValue = b.quiz.length;
+          break;
+        case 'createdAt':
+          aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           break;
         case 'title':
         default:
@@ -277,6 +281,7 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses, setCourses
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider hidden sm:table-cell">Category</th>
                             <SortableHeader sortKey="modules" label="Modules" className="hidden sm:table-cell" />
                             <SortableHeader sortKey="quiz" label="Quiz" className="hidden md:table-cell" />
+                            <SortableHeader sortKey="createdAt" label="Date Created" className="hidden lg:table-cell" />
                             <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                         </tr>
                     </thead>
@@ -289,6 +294,7 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses, setCourses
                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 hidden sm:table-cell">{course.category}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 text-center hidden sm:table-cell">{course.modules.length}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 text-center hidden md:table-cell">{course.quiz.length}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 hidden lg:table-cell">{course.createdAt ? new Date(course.createdAt).toLocaleDateString() : 'N/A'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                             <button onClick={() => handleOpenModal(course)} className="text-zamzam-teal-600 hover:text-zamzam-teal-800 p-2 rounded-full hover:bg-zamzam-teal-100 transition" aria-label={`Edit ${course.title}`}>
                                 <PencilIcon className="h-5 w-5"/>
@@ -301,7 +307,7 @@ const CourseManagement: React.FC<CourseManagementProps> = ({ courses, setCourses
                         ))}
                         {filteredAndSortedCourses.length === 0 && (
                           <tr>
-                            <td colSpan={5} className="text-center py-10 px-6 text-slate-500">
+                            <td colSpan={6} className="text-center py-10 px-6 text-slate-500">
                                 No courses found matching your criteria.
                             </td>
                           </tr>

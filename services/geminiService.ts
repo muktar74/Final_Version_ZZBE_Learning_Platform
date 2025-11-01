@@ -1,11 +1,12 @@
 
+
 import { GoogleGenAI, Type } from '@google/genai';
 import { Module, QuizQuestion, AiMessage } from '../types';
-import { GEMINI_API_KEY } from './config';
 
-// Initialize the AI client using the API key from the config file.
-// The Gemini SDK will handle the error if the API key is missing.
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+// Initialize the AI client using the API key from environment variables.
+// This is the secure, recommended method for production applications.
+// The SDK will handle the error if the API key is missing.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 interface GeneratedContent {
   description: string;
@@ -190,12 +191,12 @@ ${courseContent}
   }
 };
 
-export const getAiChatResponse = async (history: AiMessage[], courseContext?: {title: string, description: string}): Promise<string> => {
+export const getAiChatResponse = async (history: AiMessage[], courseContext?: {title: string, description: string, modules: string}): Promise<string> => {
     try {
         let systemInstruction = "You are a helpful and knowledgeable assistant for Zamzam Bank's e-learning platform. Your expertise is in Islamic Finance Banking (IFB). Be friendly, professional, and provide clear explanations. You must not answer questions outside the scope of Islamic finance, banking, or the provided course context.";
         
         if (courseContext) {
-            systemInstruction += `\n\nThe user is currently viewing the course "${courseContext.title}". Course description: "${courseContext.description}". Tailor your answers to be relevant to this course if possible.`;
+            systemInstruction += `\n\nThe user is currently viewing the course "${courseContext.title}". Course description: "${courseContext.description}". Use the following module content for detailed context:\n\n---\n${courseContext.modules}\n---\n\nTailor your answers to be relevant to this course if possible.`;
         }
         
         const contents = history.map(h => ({

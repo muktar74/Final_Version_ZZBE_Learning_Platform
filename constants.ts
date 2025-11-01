@@ -34,4 +34,11 @@ export const BADGE_DEFINITIONS: { [key: string]: Badge } = {
         icon: ShieldCheckIcon,
         points: 150,
     },
+    'score-improver': {
+        id: 'score-improver',
+        name: 'Continuous Improver',
+        description: 'Improved your score on a quiz retake.',
+        icon: SparklesIcon,
+        points: 25,
+    },
 };

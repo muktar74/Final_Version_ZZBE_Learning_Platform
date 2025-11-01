@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { User, Course, UserRole, UserProgress, CertificateData, Notification, NotificationType, AiMessage, Review, Toast as ToastType, AllUserProgress, ExternalResource, CourseCategory } from './types';
+import { User, Course, UserRole, UserProgress, CertificateData, Notification, NotificationType, AiMessage, Review, Toast as ToastType, AllUserProgress, ExternalResource, CourseCategory, AdminTab, mapSupabaseCourse, View } from './types';
 import { BADGE_DEFINITIONS } from './constants';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
@@ -18,11 +18,11 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Toast from './components/Toast';
 import UserProfile from './components/UserProfile';
 import Spinner from './components/Spinner';
+import MyCertificates from './components/MyCertificates';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import type { Session, RealtimeChannel } from '@supabase/supabase-js';
 
 
-type View = 'dashboard' | 'course' | 'certificate' | 'admin' | 'leaderboard' | 'resources' | 'courses' | 'profile';
 type Page = 'home' | 'login' | 'register' | 'app';
 
 const App: React.FC = () => {
@@ -57,14 +57,47 @@ const App: React.FC = () => {
   const [toasts, setToasts] = useState<ToastType[]>([]);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [adminTab, setAdminTab] = useState<AdminTab>('courses');
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [certificateData, setCertificateData] = useState<CertificateData | null>(null);
+  const [quizAttemptId, setQuizAttemptId] = useState(0);
   
   const addToast = useCallback((message: string, type: ToastType['type']) => {
-    const id = `toast-${Date.now()}`;
+    const id = `toast-${Date.now()}-${Math.random()}`;
     setToasts(prev => [...prev, { id, message, type }]);
   }, []);
+  
+  const resetAppState = useCallback(() => {
+    setCurrentUser(null);
+    setCurrentPage('home');
+    setCurrentView('dashboard');
+    setAdminTab('courses');
+    setUsers([]);
+    setCourses([]);
+    setCourseCategories([]);
+    setNotifications([]);
+    setAllUserProgress({});
+    setExternalResources([]);
+    setAiChatHistory([]);
+    setSelectedCourse(null);
+    setCertificateData(null);
+  }, []);
+
+  const courseContext = useMemo(() => {
+    if (!selectedCourse) return undefined;
+    
+    // Strip HTML tags and join module content for a clean context for the AI
+    const moduleText = selectedCourse.modules
+        .map(m => `Module: ${m.title}\nContent: ${m.content.replace(/<[^>]*>?/gm, ' ')}`)
+        .join('\n\n');
+    
+    return {
+        title: selectedCourse.title,
+        description: selectedCourse.description,
+        modules: moduleText,
+    };
+  }, [selectedCourse]);
 
   const fetchAppData = useCallback(async (user: User) => {
     try {
@@ -114,7 +147,7 @@ const App: React.FC = () => {
         }, {});
 
         setUsers(usersData || []);
-        setCourses((coursesData as Course[]) || []);
+        setCourses((coursesData?.map(mapSupabaseCourse) as Course[]) || []);
         // For employees, this will only contain their own progress, which is what the dashboard needs.
         // For admins, it will contain everyone's progress.
         setAllUserProgress(progressObject);
@@ -169,13 +202,13 @@ const App: React.FC = () => {
               setCurrentUser(sanitizedProfile as User);
               setCurrentPage('app');
               setCurrentView(sanitizedProfile.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+              setAdminTab('courses'); // Default admin view
               await fetchAppData(sanitizedProfile as User);
           }
         } else {
-          // This block now serves as a safety net for non-manual sign-outs (e.g., token expiration).
-          // Manual sign-out cleanup is handled directly in `handleLogout`.
-          setCurrentUser(null);
-          setCurrentPage('home');
+            // This block serves as a safety net for non-manual sign-outs (e.g., token expiration).
+            // Call the centralized reset function to ensure a clean state.
+            resetAppState();
         }
       } catch (e) {
           console.error("Error in onAuthStateChange listener:", e);
@@ -185,7 +218,7 @@ const App: React.FC = () => {
     });
 
     return () => authListener.subscription.unsubscribe();
-  }, [addToast, fetchAppData]);
+  }, [addToast, fetchAppData, resetAppState]);
   
    // Realtime notifications subscription
    useEffect(() => {
@@ -209,19 +242,11 @@ const App: React.FC = () => {
 
 
   const handleLogout = async () => {
+    // Robustly remove all realtime channel subscriptions to prevent connection leaks.
+    await supabase.removeAllChannels();
+
     // Immediately and synchronously clear all user-specific state.
-    // This is the single source of truth for logout cleanup.
-    setCurrentUser(null);
-    setCurrentPage('home');
-    setUsers([]);
-    setCourses([]);
-    setNotifications([]);
-    setAllUserProgress({});
-    setExternalResources([]);
-    setCourseCategories([]);
-    setAiChatHistory([]);
-    setSelectedCourse(null);
-    setCertificateData(null);
+    resetAppState();
     
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -271,41 +296,22 @@ const App: React.FC = () => {
   }, [addToast]);
 
   const handleLogin = async (email: string, password: string) => {
-    // 1. Authenticate with Supabase
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError) {
-        addToast(authError.message, 'error');
-        throw authError;
-    }
+    // 1. Authenticate with Supabase.
+    // The onAuthStateChange listener is the single source of truth for handling
+    // post-login logic (profile fetching, approval checks, app state setup).
+    // This avoids race conditions and centralizes logic.
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     
-    // 2. If authentication is successful, immediately check for profile approval.
-    // This is crucial to prevent the login button from getting stuck for unapproved users.
-    if (authData.user) {
-        const { data: profile, error: profileError } = await supabase
-            .from('users')
-            .select('approved, role')
-            .eq('id', authData.user.id)
-            .single();
-
-        if (profileError || !profile) {
-            // Couldn't find a profile, something is wrong. Sign out and show error.
-            await supabase.auth.signOut();
-            const errorMessage = "Login failed: Could not retrieve user profile.";
-            addToast(errorMessage, 'error');
-            throw new Error(errorMessage);
+    if (error) {
+        // Translate common Supabase auth errors to be more user-friendly.
+        let message = error.message;
+        if (error.message === 'Invalid login credentials') {
+            message = 'Incorrect email or password. Please try again.';
         }
-
-        // Admins can log in regardless of approval status.
-        if (!profile.approved && profile.role !== UserRole.ADMIN) {
-            // Profile found but not approved. Sign out and show specific error.
-            await supabase.auth.signOut();
-            const errorMessage = "Your account is pending approval.";
-            addToast(errorMessage, 'error');
-            throw new Error(errorMessage);
-        }
+        addToast(message, 'error');
+        throw error; // This is important to stop the loading spinner in Login.tsx
     }
-    // 3. If approved, the onAuthStateChange listener will take over from here.
-    // No need to do anything else. The promise resolves successfully.
+    // 2. On success, the onAuthStateChange listener will take over.
   };
   
   const handleRegister = async (name: string, email: string, password: string) => {
@@ -328,6 +334,9 @@ const App: React.FC = () => {
   const setView = (view: View) => {
     setSelectedCourse(null);
     setCertificateData(null);
+    if (view !== 'admin') {
+      setAdminTab('courses'); // Reset admin view if navigating away
+    }
     setCurrentView(view);
   };
   
@@ -409,110 +418,125 @@ const App: React.FC = () => {
 
   const handleCourseComplete = useCallback(async (course: Course, score: number) => {
     if (!currentUser) return;
-    
-    // Always save the latest quiz score
-    const { error: progressSaveError } = await supabase.from('user_progress').upsert({
-        user_id: currentUser.id,
-        course_id: course.id,
-        quiz_score: score,
-    }, { onConflict: 'user_id, course_id' });
 
-    if (progressSaveError) {
-        addToast(`Error saving quiz score: ${progressSaveError.message}`, 'error');
-        return;
-    }
-
-    setAllUserProgress(prev => ({
-        ...prev,
-        [currentUser.id]: {
-            ...prev[currentUser.id],
-            [course.id]: {
-                ...prev[currentUser.id]?.[course.id],
-                quizScore: score,
-            }
-        }
-    }));
-    
-    // Check if the user passed
+    // First, check for a passing score.
     if (score < course.passingScore) {
         addToast(`You scored ${score}%. The passing score is ${course.passingScore}%. Please review the material and try again.`, 'error');
-        setView('course'); // Stay on the course view
-        return;
-    }
-    
-    // --- PASSED ---
-    addToast(`Congratulations, you passed with a score of ${score}%!`, 'success');
-
-    const isFirstCompletion = !allUserProgress[currentUser.id]?.[course.id]?.completionDate;
-    const completionDate = isFirstCompletion ? new Date().toISOString() : allUserProgress[currentUser.id]?.[course.id]?.completionDate;
-
-    if (isFirstCompletion) {
+        // We still save the failing score to track attempts.
         const { error } = await supabase.from('user_progress').upsert({
             user_id: currentUser.id,
             course_id: course.id,
+            quiz_score: score,
+        }, { onConflict: 'user_id, course_id' });
+        if (!error) {
+            setAllUserProgress(prev => ({ ...prev, [currentUser.id]: { ...prev[currentUser.id], [course.id]: { ...prev[currentUser.id]?.[course.id], quizScore: score }}}));
+        }
+        setQuizAttemptId(id => id + 1); // Force CourseView to remount and exit quiz
+        return;
+    }
+
+    // Handle passing score logic (first time vs retake).
+    const previousProgress = allUserProgress[currentUser.id]?.[course.id];
+    const isFirstCompletion = !previousProgress?.completionDate;
+
+    if (isFirstCompletion) {
+        addToast(`Congratulations, you passed with a score of ${score}%!`, 'success');
+        const completionDate = new Date().toISOString();
+
+        // Update progress with score AND completion date
+        const { error } = await supabase.from('user_progress').upsert({
+            user_id: currentUser.id,
+            course_id: course.id,
+            quiz_score: score,
             completion_date: completionDate
         }, { onConflict: 'user_id, course_id' });
 
         if (error) {
-            addToast(`Error saving completion date: ${error.message}`, 'error');
+            addToast(`Error saving completion: ${error.message}`, 'error');
         } else {
-             setAllUserProgress(prev => ({
+            setAllUserProgress(prev => ({
                 ...prev,
-                [currentUser.id]: {
-                    ...prev[currentUser.id],
-                    [course.id]: { ...prev[currentUser.id]?.[course.id], completionDate }
-                }
+                [currentUser.id]: { ...prev[currentUser.id], [course.id]: { ...previousProgress, quizScore: score, completionDate }}
             }));
             await awardPoints(currentUser.id, 100);
             await createNotification(currentUser.id, NotificationType.CERTIFICATE, `Congratulations! You earned a certificate for "${course.title}".`);
-        }
-    }
 
-    setCertificateData({
-      courseId: course.id,
-      employeeName: currentUser.name,
-      courseName: course.title,
-      completionDate: new Date(completionDate!).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-    });
-    setCurrentView('certificate');
+            // --- Badge Logic for first completion ---
+            // FIX: Explicitly type `p` as `any` to resolve TypeScript error `Property 'completionDate' does not exist on type 'unknown'`.
+            // This is a common workaround for `Object.values` on objects with index signatures.
+            const completedCount = Object.values(allUserProgress[currentUser.id] || {}).filter((p: any) => p.completionDate).length + 1; // +1 for the current one
+            const currentBadges = currentUser.badges || [];
+            const newBadges: string[] = [];
+            if (completedCount >= 1 && !currentBadges.includes('first-course')) newBadges.push('first-course');
+            if (completedCount >= 3 && !currentBadges.includes('prolific-learner')) newBadges.push('prolific-learner');
+            if (score === 100 && !currentBadges.includes('quiz-master')) newBadges.push('quiz-master');
+            if (courses.length > 0 && completedCount === courses.length && !currentBadges.includes('completionist')) newBadges.push('completionist');
 
-    // Check for new badges
-    const userProgressAfterUpdate = { // Use fresh data for badge calculation
-        ...allUserProgress,
-        [currentUser.id]: {
-            ...allUserProgress[currentUser.id],
-            [course.id]: { ...allUserProgress[currentUser.id]?.[course.id], quizScore: score, completionDate }
-        }
-    };
-
-    const completedCourses = Object.values(userProgressAfterUpdate[currentUser.id] || {}).filter((p: UserProgress[string]) => p.completionDate);
-    const completedCount = completedCourses.length;
-    
-    const currentBadges = currentUser.badges || [];
-    const newBadges: string[] = [];
-    if (completedCount >= 1 && !currentBadges.includes('first-course')) newBadges.push('first-course');
-    if (completedCount >= 3 && !currentBadges.includes('prolific-learner')) newBadges.push('prolific-learner');
-    if (score === 100 && !currentBadges.includes('quiz-master')) newBadges.push('quiz-master');
-    if (courses.length > 0 && completedCount === courses.length && !currentBadges.includes('completionist')) newBadges.push('completionist');
-
-    if (newBadges.length > 0) {
-        let pointsToAddForBadges = 0;
-        newBadges.forEach(badgeId => {
-            const badge = BADGE_DEFINITIONS[badgeId];
-            if (badge) {
-                pointsToAddForBadges += badge.points;
-                addToast(`Badge Unlocked: ${badge.name}!`, 'success');
-                createNotification(currentUser.id, NotificationType.BADGE, `You earned the "${badge.name}" badge and ${badge.points} points!`);
+            if (newBadges.length > 0) {
+                let pointsToAddForBadges = 0;
+                newBadges.forEach(badgeId => {
+                    const badge = BADGE_DEFINITIONS[badgeId];
+                    if (badge) {
+                        pointsToAddForBadges += badge.points;
+                        addToast(`Badge Unlocked: ${badge.name}!`, 'success');
+                        createNotification(currentUser.id, NotificationType.BADGE, `You earned the "${badge.name}" badge and ${badge.points} points!`);
+                    }
+                });
+                
+                const updatedBadges = [...currentBadges, ...newBadges];
+                const { error: userUpdateError } = await supabase.from('users').update({ badges: updatedBadges }).eq('id', currentUser.id);
+                if (userUpdateError) { addToast('Error awarding badge.', 'error'); } 
+                else {
+                    await awardPoints(currentUser.id, pointsToAddForBadges);
+                    setCurrentUser(prev => prev ? { ...prev, badges: updatedBadges } : null);
+                }
             }
+        }
+        
+        setCertificateData({
+            courseId: course.id,
+            employeeName: currentUser.name,
+            courseName: course.title,
+            completionDate: new Date(completionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
         });
-        
-        const updatedBadges = [...currentBadges, ...newBadges];
-        const { error: userUpdateError } = await supabase.from('users').update({ badges: updatedBadges }).eq('id', currentUser.id);
-        if (userUpdateError) { addToast('Error awarding badge.', 'error'); return; }
-        
-        await awardPoints(currentUser.id, pointsToAddForBadges);
+        setCurrentView('certificate');
 
-        setCurrentUser(prev => prev ? { ...prev, badges: updatedBadges } : null);
+    } else { // This is a passing retake of a completed course.
+        const previousScore = previousProgress.quizScore || 0;
+        if (score > previousScore) {
+            addToast(`You beat your previous score! New score: ${score}%. +25 bonus points.`, 'success');
+            
+            const { error } = await supabase.from('user_progress').update({ quiz_score: score }).match({ user_id: currentUser.id, course_id: course.id });
+            if (error) {
+                addToast(`Error updating your new score: ${error.message}`, 'error');
+            } else {
+                setAllUserProgress(prev => ({ ...prev, [currentUser.id]: { ...prev[currentUser.id], [course.id]: { ...previousProgress, quizScore: score }}}));
+                await awardPoints(currentUser.id, 25); // Award bonus points
+
+                // Award 'score-improver' badge if not already earned
+                const currentBadges = currentUser.badges || [];
+                if (!currentBadges.includes('score-improver')) {
+                    const badge = BADGE_DEFINITIONS['score-improver'];
+                    if (badge) {
+                        addToast(`Badge Unlocked: ${badge.name}!`, 'success');
+                        createNotification(currentUser.id, NotificationType.BADGE, `You earned the "${badge.name}" badge and ${badge.points} points!`);
+                        
+                        const updatedBadges = [...currentBadges, 'score-improver'];
+                        const { error: userUpdateError } = await supabase.from('users').update({ badges: updatedBadges }).eq('id', currentUser.id);
+                        if (userUpdateError) { 
+                            addToast('Error awarding badge.', 'error'); 
+                        } else {
+                            await awardPoints(currentUser.id, badge.points);
+                            setCurrentUser(prev => prev ? { ...prev, badges: updatedBadges } : null);
+                        }
+                    }
+                }
+            }
+        } else {
+            addToast(`Your new score of ${score}% did not beat your previous score of ${previousScore}%. Your original score is kept.`, 'info');
+        }
+        // Always remount course view after a retake to exit quiz.
+        setQuizAttemptId(id => id + 1);
     }
   }, [currentUser, allUserProgress, awardPoints, createNotification, courses, addToast]);
 
@@ -622,6 +646,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleViewCertificate = useCallback((courseId: string) => {
+    if (!currentUser) return;
+
+    const course = courses.find(c => c.id === courseId);
+    const progress = allUserProgress[currentUser.id]?.[courseId];
+
+    if (course && progress?.completionDate) {
+        setCertificateData({
+            courseId: course.id,
+            employeeName: currentUser.name,
+            courseName: course.title,
+            completionDate: new Date(progress.completionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+        });
+        setCurrentView('certificate');
+    } else {
+        addToast("Could not find certificate data.", 'error');
+    }
+  }, [currentUser, courses, allUserProgress, addToast]);
+
+
   const renderAppContent = () => {
     if (!currentUser) return null;
     const currentUserProgress = allUserProgress[currentUser.id] || {};
@@ -634,9 +678,8 @@ const App: React.FC = () => {
 
     // Handle role-specific views
     if (currentUser.role === UserRole.ADMIN) {
-      // The AdminDashboard is the primary view for an admin.
-      // Other views like 'profile' are handled above.
       return <AdminDashboard 
+        activeTab={adminTab}
         courses={courses} 
         setCourses={setCourses} 
         users={users}
@@ -656,7 +699,7 @@ const App: React.FC = () => {
       case 'course':
         return (
           <CourseView
-            key={selectedCourse?.id} // Add key to force re-mount on course change
+            key={`${selectedCourse?.id}-${quizAttemptId}`}
             course={selectedCourse}
             setCourses={setCourses}
             currentUser={currentUser}
@@ -672,6 +715,7 @@ const App: React.FC = () => {
         return certificateData && (
           <CertificateView
             data={certificateData}
+            currentUser={currentUser}
             onBackToDashboard={() => setView('dashboard')}
             onRateCourse={handleRateCourse}
             userRating={currentUserProgress[certificateData.courseId]?.rating}
@@ -679,6 +723,14 @@ const App: React.FC = () => {
             addToast={addToast}
           />
         );
+       case 'certificates':
+        return <MyCertificates 
+            user={currentUser}
+            courses={courses}
+            userProgress={currentUserProgress}
+            onViewCertificate={handleViewCertificate}
+            onBack={() => setView('dashboard')}
+        />;
       case 'leaderboard':
         return <Leaderboard users={users.filter(u => u.role === UserRole.EMPLOYEE)} onBack={() => setView('dashboard')} />;
       case 'resources':
@@ -746,6 +798,8 @@ const App: React.FC = () => {
                     notifications={notifications}
                     onMarkNotificationsRead={handleMarkNotificationsRead}
                     onNavigate={setView}
+                    activeAdminTab={adminTab}
+                    onNavigateAdminTab={setAdminTab}
                   />
                   <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
                     {renderAppContent()}
@@ -754,7 +808,7 @@ const App: React.FC = () => {
                     <AiAssistant 
                         history={aiChatHistory} 
                         setHistory={setAiChatHistory}
-                        courseContext={selectedCourse ? {title: selectedCourse.title, description: selectedCourse.description} : undefined}
+                        courseContext={courseContext}
                     />
                   }
                   <Footer />

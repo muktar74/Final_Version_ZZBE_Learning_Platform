@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Course, Module, QuizQuestion, Toast, CourseCategory } from '../types';
 import { generateCourseContent, generateQuiz, generateCourseFromText } from '../services/geminiService';
@@ -265,14 +266,16 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
     setModules(modules.filter((_, i) => i !== index));
   };
 
-
-  const handleQuizChange = (qIndex: number, field: keyof QuizQuestion, value: any, optIndex?: number) => {
+  const handleQuizChange = (qIndex: number, field: 'question' | 'options' | 'correctAnswer', value: string, optIndex?: number) => {
     const newQuiz = [...quiz];
+    const question = newQuiz[qIndex];
+
     if (field === 'options' && optIndex !== undefined) {
-      newQuiz[qIndex].options[optIndex] = value;
-    } else {
-      // @ts-ignore
-      newQuiz[qIndex][field] = value;
+      question.options[optIndex] = value;
+    } else if (field === 'question') {
+      question.question = value;
+    } else if (field === 'correctAnswer') {
+      question.correctAnswer = value;
     }
     setQuiz(newQuiz);
   };
@@ -434,345 +437,284 @@ const CourseFormModal: React.FC<CourseFormModalProps> = ({ isOpen, onClose, onSa
     try {
         // Handle Image
         let finalImageUrl = course?.imageUrl || '';
-        if (imageFile) { // New image uploaded, replace old one
-            await deleteFileFromStorage(course?.imageUrl);
+        if (imageFile) {
+            if (course?.imageUrl) { await deleteFileFromStorage(course.imageUrl); }
             const { url } = await uploadFile(imageFile);
             finalImageUrl = url;
-        } else if (!imageUrl && course?.imageUrl) { // Image was explicitly removed
+        } else if (!imageUrl && course?.imageUrl) { // Image was removed
              await deleteFileFromStorage(course.imageUrl);
-             finalImageUrl = ''; // Set to empty string
+             finalImageUrl = '';
         }
 
         // Handle Textbook
         let finalTbookUrl = course?.textbookUrl;
         let finalTbookName = course?.textbookName;
         if (textbookFile) {
-            await deleteFileFromStorage(course?.textbookUrl);
+            if (course?.textbookUrl) { await deleteFileFromStorage(course.textbookUrl); }
             const { url, name } = await uploadFile(textbookFile);
             finalTbookUrl = url;
             finalTbookName = name;
-        } else if (!textbookUrl && course?.textbookUrl) { // Textbook was explicitly removed
+        } else if (!textbookUrl && course?.textbookUrl) { // Textbook was removed
             await deleteFileFromStorage(course.textbookUrl);
             finalTbookUrl = undefined;
             finalTbookName = undefined;
         }
-        
+
         // Handle Video Modules
-        const finalModules: Module[] = [];
-        const oldUploadedVideoUrls = new Set(
-            course?.modules
-                .filter(m => m.type === 'video' && m.videoType === 'upload' && m.content)
-                .map(m => m.content) || []
-        );
-        const newUploadedVideoUrls = new Set<string>();
-
-        for (const mod of modules) {
-            const { file, ...baseModule } = mod;
-            if (baseModule.type === 'video' && baseModule.videoType === 'upload' && file) {
-                // New video file to upload for a module
-                const { url } = await uploadFile(file);
-                finalModules.push({ ...baseModule, content: url });
-                newUploadedVideoUrls.add(url);
-            } else {
-                // No new file, just keep existing module data
-                finalModules.push(baseModule);
-                if (baseModule.type === 'video' && baseModule.videoType === 'upload' && baseModule.content) {
-                    newUploadedVideoUrls.add(baseModule.content);
+        const finalModules = await Promise.all(
+            modules.map(async (module) => {
+                if (module.type === 'video' && module.videoType === 'upload' && module.file) {
+                    const originalModuleInDb = course?.modules.find(m => m.id === module.id);
+                    if (originalModuleInDb?.content) {
+                        await deleteFileFromStorage(originalModuleInDb.content);
+                    }
+                    const { url } = await uploadFile(module.file);
+                    return { ...module, content: url, file: undefined }; // remove file before saving
                 }
-            }
-        }
+                return { ...module, file: undefined };
+            })
+        );
         
-        // Determine which old videos were removed and delete them from storage
-        const urlsToDelete = [...oldUploadedVideoUrls].filter(url => !newUploadedVideoUrls.has(url));
-        for (const url of urlsToDelete) {
-            await deleteFileFromStorage(url);
-        }
-
         const finalCourse: Course = {
-            id: course?.id || '',
+            id: course?.id || '', // placeholder id
             title,
             description,
             category,
             passingScore,
             modules: finalModules,
             quiz,
-            imageUrl: finalImageUrl,
             reviews: course?.reviews || [],
             discussion: course?.discussion || [],
-            textbookUrl: finalTbookUrl, 
+            imageUrl: finalImageUrl,
+            textbookUrl: finalTbookUrl,
             textbookName: finalTbookName,
         };
-        
+
         await onSave(finalCourse);
         handleClose();
+
     } catch (error: any) {
-        addToast(error.message || 'An error occurred while saving the course.', 'error');
+        console.error("Error saving course:", error);
+        addToast(error.message || "An unexpected error occurred while saving.", 'error');
     } finally {
         setIsSaving(false);
     }
   };
 
+
   if (!isOpen) return null;
+  
+  const formElementClasses = "w-full mt-1 px-3 py-2 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500";
+
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl flex flex-col h-[90vh]">
-          <div className="p-6 border-b">
-              <h2 className="text-2xl font-bold">{course ? 'Edit Course' : 'Create New Course'}</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b flex justify-between items-center flex-shrink-0">
+          <h2 className="text-2xl font-bold">{course ? 'Edit Course' : 'Create New Course'}</h2>
+          <div className="flex items-center space-x-4">
+            <button type="button" onClick={handleClose} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSaving || isGenerating} className="px-6 py-2 text-sm font-semibold text-white bg-zamzam-teal-600 rounded-md hover:bg-zamzam-teal-700 transition disabled:bg-slate-400">
+              {isSaving ? 'Saving...' : (course ? 'Save Changes' : 'Create Course')}
+            </button>
           </div>
-
-          <div ref={modalBodyRef} className="p-6 flex-grow overflow-y-auto">
-              <form id="courseForm" onSubmit={handleSubmit}>
-                <div className="p-4 bg-slate-50 rounded-lg border mb-6">
-                  <h3 className="font-bold text-slate-800 mb-3">AI Content Tools</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                          <label htmlFor="courseTitleForAI" className="block text-sm font-medium text-slate-700 mb-1">1. Generate from a title</label>
-                          <div className="flex items-center gap-2">
-                              <input
-                              type="text"
-                              id="courseTitleForAI"
-                              value={title}
-                              onChange={(e) => setTitle(e.target.value)}
-                              className="w-full text-base p-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white"
-                              placeholder="e.g., Introduction to Takaful"
-                              />
-                              <button
-                                  type="button"
-                                  onClick={() => confirmAndRunGenerator(handleGenerateWithAI)}
-                                  disabled={isGenerating || !title || isSaving}
-                                  className="flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-zamzam-teal-600 rounded-md hover:bg-zamzam-teal-700 transition disabled:bg-slate-400"
-                              >
-                                  <SparklesIcon className="h-5 w-5 mr-2" />
-                                  Generate
-                              </button>
-                          </div>
-                      </div>
-                      <div>
-                          <label htmlFor="pdfUpload" className="block text-sm font-medium text-slate-700 mb-1">2. Or, generate from a textbook</label>
-                          <input type="file" accept=".pdf" ref={pdfGeneratorInputRef} onChange={(e) => confirmAndRunGenerator(() => handleGenerateFromPdf(e))} className="hidden" disabled={isGenerating || isSaving} id="pdfUpload"/>
-                          <button
-                              type="button"
-                              onClick={() => pdfGeneratorInputRef.current?.click()}
-                              disabled={isGenerating || isSaving}
-                              className="w-full flex items-center justify-center px-4 py-2 text-sm font-semibold text-zamzam-teal-700 bg-zamzam-teal-100 rounded-md hover:bg-zamzam-teal-200 transition disabled:bg-slate-300"
-                          >
-                              <ArrowUpTrayIcon className="h-5 w-5 mr-2" />
-                              {isGenerating ? 'Processing...' : 'Upload PDF & Generate Course'}
-                          </button>
-                      </div>
-                  </div>
+        </div>
+        
+        {/* Main Body */}
+        <div ref={modalBodyRef} className="p-6 flex-grow overflow-y-auto">
+             {/* AI Generation Tools */}
+             <div className="bg-zamzam-teal-50 border border-zamzam-teal-200 p-4 rounded-lg mb-6">
+                <h3 className="text-lg font-bold text-zamzam-teal-800 flex items-center mb-2"><SparklesIcon className="h-5 w-5 mr-2"/>AI Content Tools</h3>
+                <p className="text-sm text-zamzam-teal-700 mb-4">Automatically generate course content, modules, and quizzes.</p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                     <button
+                        type="button"
+                        onClick={() => confirmAndRunGenerator(handleGenerateWithAI)}
+                        disabled={isGenerating || !title}
+                        className="flex-1 flex items-center justify-center bg-white text-zamzam-teal-700 font-semibold py-2 px-4 rounded-lg border border-zamzam-teal-600 hover:bg-zamzam-teal-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Generate from Title
+                    </button>
+                    <input type="file" ref={pdfGeneratorInputRef} onChange={(e) => confirmAndRunGenerator(() => handleGenerateFromPdf(e))} accept=".pdf" className="hidden"/>
+                    <button
+                        type="button"
+                        onClick={() => pdfGeneratorInputRef.current?.click()}
+                        disabled={isGenerating}
+                        className="flex-1 flex items-center justify-center bg-white text-zamzam-teal-700 font-semibold py-2 px-4 rounded-lg border border-zamzam-teal-600 hover:bg-zamzam-teal-100 transition disabled:opacity-50"
+                    >
+                        Generate from PDF
+                    </button>
                 </div>
+                {isGenerating && <p className="text-sm text-slate-600 mt-2 animate-pulse text-center">AI is working its magic...</p>}
+            </div>
 
-                {/* Course Details */}
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div className="md:col-span-2 space-y-4">
-                        <div>
-                            <label htmlFor="courseTitle" className="block text-sm font-medium text-slate-700 mb-1">Course Title</label>
-                            <input type="text" id="courseTitle" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
-                        </div>
-                         <div>
-                            <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                            <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={5} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required ></textarea>
-                        </div>
-                    </div>
-                    <div>
-                        <label htmlFor="imageUpload" className="block text-sm font-medium text-slate-700 mb-1">Cover Image</label>
-                        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-md">
-                            <div className="space-y-1 text-center">
-                                {imageUrl ? (
-                                    <div className="relative group">
-                                      <img src={imageUrl} alt="Course preview" className="mx-auto h-32 w-auto object-cover rounded-md" />
-                                      <button type="button" onClick={handleRemoveImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <TrashIcon className="h-4 w-4" />
-                                      </button>
-                                    </div>
-                                ) : (
-                                    <CameraIcon className="mx-auto h-12 w-12 text-slate-400" />
-                                )}
-                                <div className="flex text-sm text-slate-600 justify-center">
-                                    <label htmlFor="image-upload-input" className="relative cursor-pointer bg-white rounded-md font-medium text-zamzam-teal-600 hover:text-zamzam-teal-500 focus-within:outline-none">
-                                        <span>{imageUrl ? 'Change image' : 'Upload an image'}</span>
-                                        <input id="image-upload-input" ref={imageInputRef} onChange={handleImageSelect} name="image-upload-input" type="file" className="sr-only" accept="image/png, image/jpeg" />
-                                    </label>
-                                </div>
-                                <p className="text-xs text-slate-500">PNG, JPG up to 2MB</p>
-                            </div>
-                        </div>
-                    </div>
+             {/* Course Details */}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                    <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-1">Course Title</label>
+                    <input type="text" id="title" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div>
+                <div className="md:col-span-2">
+                    <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1">Course Description</label>
+                    <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
+                </div>
+                 <div>
                     <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-                    <select id="category" value={category} onChange={e => setCategory(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white">
+                    <select id="category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required>
                         {courseCategories.length === 0 && <option disabled>No categories available</option>}
                         {courseCategories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
                     </select>
-                  </div>
-                  <div>
+                </div>
+                 <div>
                     <label htmlFor="passingScore" className="block text-sm font-medium text-slate-700 mb-1">Passing Score (%)</label>
-                    <input type="number" id="passingScore" value={passingScore} onChange={e => setPassingScore(parseInt(e.target.value))} min="0" max="100" className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
-                  </div>
+                    <input type="number" id="passingScore" value={passingScore} onChange={(e) => setPassingScore(parseInt(e.target.value))} min="0" max="100" className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white" required />
                 </div>
 
-                {/* Textbook Upload */}
-                 <div className="mb-8">
-                    <h3 className="text-xl font-bold mb-4 border-b pb-2">Course Textbook (Optional)</h3>
-                     <div className="p-4 bg-slate-50 rounded-lg border">
-                        <input type="file" accept=".pdf" ref={textbookInputRef} onChange={handleTextbookSelect} className="hidden" id="textbookUpload"/>
-                        {!textbookName ? (
-                             <button
-                                type="button"
-                                onClick={() => textbookInputRef.current?.click()}
-                                disabled={isSaving}
-                                className="w-full flex items-center justify-center px-4 py-2 text-sm font-semibold text-slate-700 bg-white rounded-md border border-slate-300 hover:bg-slate-100 transition"
-                            >
-                                <TextbookIcon className="h-5 w-5 mr-2" />
-                                Upload Textbook PDF
-                            </button>
-                        ) : (
-                            <div className="flex items-center justify-between bg-white p-3 rounded-md border">
-                                <div className="flex items-center space-x-3">
-                                    <TextbookIcon className="h-5 w-5 text-zamzam-teal-600"/>
-                                    <span className="text-sm font-medium text-slate-800">{textbookName}</span>
-                                </div>
-                                <button type="button" onClick={handleRemoveTextbook} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5"/></button>
+                <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* Course Image */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Course Image</label>
+                        <div className="mt-1 flex items-center space-x-4">
+                            <div className="w-32 h-20 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden">
+                                {imageUrl ? <img src={imageUrl} alt="Course preview" className="w-full h-full object-cover"/> : <CameraIcon className="h-8 w-8 text-slate-400"/>}
                             </div>
-                        )}
-                    </div>
-                </div>
-
-
-                {/* Modules */}
-                <div className="mb-8">
-                    <h3 className="text-xl font-bold mb-4 border-b pb-2">Modules</h3>
-                    <div className="space-y-4">
-                        {modules.map((mod, index) => (
-                            <div key={index} className="bg-slate-50 p-4 rounded-lg border">
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="font-semibold">Module {index + 1}</label>
-                                    <button type="button" onClick={() => removeModule(index)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5"/></button>
-                                </div>
-                                <input type="text" value={mod.title} onChange={e => handleModuleChange(index, { title: e.target.value })} placeholder="Module Title" className="w-full mb-2 px-3 py-2 border border-slate-300 rounded-md bg-white"/>
-                                <select value={mod.type} onChange={e => handleModuleChange(index, { type: e.target.value as 'text' | 'video' })} className="w-full mb-2 px-3 py-2 border border-slate-300 rounded-md bg-white">
-                                  <option value="text">Text / HTML</option>
-                                  <option value="video">Video</option>
-                                </select>
-                                
-                                {mod.type === 'video' ? (
-                                  <div className="mt-2 space-y-3 p-3 bg-slate-100 rounded-md">
-                                      <div className="flex items-center space-x-4">
-                                          <label className="flex items-center space-x-2 text-sm font-medium">
-                                              <input type="radio" name={`videoType-${index}`} value="embed" checked={mod.videoType !== 'upload'} onChange={() => handleModuleChange(index, { videoType: 'embed', content: '' })} className="h-4 w-4 text-zamzam-teal-600 focus:ring-zamzam-teal-500"/>
-                                              <span>Embed URL</span>
-                                          </label>
-                                          <label className="flex items-center space-x-2 text-sm font-medium">
-                                              <input type="radio" name={`videoType-${index}`} value="upload" checked={mod.videoType === 'upload'} onChange={() => handleModuleChange(index, { videoType: 'upload', content: '' })} className="h-4 w-4 text-zamzam-teal-600 focus:ring-zamzam-teal-500"/>
-                                              <span>Upload File</span>
-                                          </label>
-                                      </div>
-                                      {mod.videoType === 'upload' ? (
-                                          <div>
-                                              <input type="file" accept="video/*" onChange={(e) => handleVideoSelect(e, index)} disabled={isSaving} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-zamzam-teal-50 file:text-zamzam-teal-700 hover:file:bg-zamzam-teal-100"/>
-                                              {mod.content && (
-                                                  <div className="mt-2">
-                                                      <p className="text-xs text-slate-500 mb-1">Current video:</p>
-                                                      <video src={mod.content} controls className="w-full max-w-xs rounded shadow"></video>
-                                                  </div>
-                                              )}
-                                          </div>
-                                      ) : (
-                                          <input type="url" value={mod.content} onChange={e => handleModuleChange(index, { content: e.target.value, videoType: 'embed' })} placeholder="Video Embed URL (e.g., from YouTube, Vimeo)" className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white"/>
-                                      )}
-                                  </div>
-                                ) : (
-                                  <textarea value={mod.content} onChange={e => handleModuleChange(index, { content: e.target.value })} placeholder="Module Content (Use HTML for formatting)" rows={6} className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white"/>
-                                )}
+                            <input type="file" ref={imageInputRef} onChange={handleImageSelect} accept="image/*" className="hidden"/>
+                            <div>
+                                <button type="button" onClick={() => imageInputRef.current?.click()} className="text-sm font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-800">Change</button>
+                                {imageUrl && <button type="button" onClick={handleRemoveImage} className="ml-2 text-sm font-semibold text-red-600 hover:text-red-800">Remove</button>}
                             </div>
-                        ))}
+                        </div>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <button type="button" onClick={addModule} className="mt-4 flex items-center px-4 py-2 text-sm font-semibold text-zamzam-teal-700 bg-zamzam-teal-100 rounded-md hover:bg-zamzam-teal-200 transition"><PlusIcon className="h-5 w-5 mr-1"/> Add Text Module</button>
-                      <button type="button" onClick={addVideoModule} className="mt-4 flex items-center px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 transition"><VideoCameraIcon className="h-5 w-5 mr-1"/> Add Video Module</button>
-                    </div>
-                </div>
-
-                {/* Quiz */}
-                <div>
-                    <h3 className="text-xl font-bold mb-4 border-b pb-2">Quiz Questions</h3>
-                    <div className="space-y-4">
-                        {quiz.map((q, qIndex) => (
-                            <div key={qIndex} className="bg-slate-50 p-4 rounded-lg border">
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="font-semibold">Question {qIndex + 1}</label>
-                                    <button type="button" onClick={() => removeQuizQuestion(qIndex)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5"/></button>
-                                </div>
-                                <textarea value={q.question} onChange={e => handleQuizChange(qIndex, 'question', e.target.value)} placeholder="Question Text" rows={2} className="w-full mb-2 px-3 py-2 border border-slate-300 rounded-md bg-white"/>
-                                <div className="space-y-2">
-                                  {q.options.map((opt, optIndex) => (
-                                      <div key={optIndex} className="flex items-center space-x-2">
-                                          <input 
-                                              type="radio" 
-                                              name={`correct-${qIndex}`} 
-                                              checked={q.correctAnswer === opt && opt.trim() !== ''} 
-                                              onChange={() => handleQuizChange(qIndex, 'correctAnswer', opt)} 
-                                              className="h-4 w-4 text-zamzam-teal-600 focus:ring-zamzam-teal-500 flex-shrink-0"
-                                              disabled={opt.trim() === ''}
-                                          />
-                                          <input 
-                                              type="text" 
-                                              value={opt} 
-                                              onChange={e => handleQuizChange(qIndex, 'options', e.target.value, optIndex)} 
-                                              placeholder={`Option ${optIndex + 1}`} 
-                                              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
-                                          />
-                                          <button 
-                                              type="button" 
-                                              onClick={() => removeQuizOption(qIndex, optIndex)} 
-                                              disabled={q.options.length <= 2}
-                                              className="p-2 text-red-500 hover:text-red-700 rounded-full hover:bg-red-100 transition disabled:text-slate-300 disabled:hover:bg-transparent"
-                                              aria-label="Remove option"
-                                          >
-                                              <TrashIcon className="h-5 w-5"/>
-                                          </button>
-                                      </div>
-                                  ))}
-                                </div>
-                                <button 
-                                    type="button" 
-                                    onClick={() => addQuizOption(qIndex)} 
-                                    className="mt-3 flex items-center px-3 py-1 text-xs font-semibold text-zamzam-teal-700 bg-zamzam-teal-100 rounded-md hover:bg-zamzam-teal-200 transition"
-                                >
-                                    <PlusIcon className="h-4 w-4 mr-1"/> Add Option
+                    {/* Course Textbook */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Course Textbook (PDF)</label>
+                        <div className="mt-2">
+                            <input type="file" ref={textbookInputRef} onChange={handleTextbookSelect} accept=".pdf" className="hidden"/>
+                            {!textbookName ? (
+                                <button type="button" onClick={() => textbookInputRef.current?.click()} className="flex items-center space-x-2 text-sm font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-800 border border-zamzam-teal-600 rounded-md px-3 py-1.5 transition">
+                                    <ArrowUpTrayIcon className="h-4 w-4" />
+                                    <span>Upload PDF</span>
                                 </button>
+                            ) : (
+                                <div className="flex items-center space-x-2 bg-slate-100 p-2 rounded-md max-w-sm">
+                                    <TextbookIcon className="h-5 w-5 text-slate-500 flex-shrink-0" />
+                                    <span className="text-sm text-slate-700 truncate flex-grow" title={textbookName}>{textbookName}</span>
+                                    <button type="button" onClick={handleRemoveTextbook} className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 flex-shrink-0">
+                                        <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Modules */}
+            <div className="mt-8">
+                <h3 className="text-lg font-bold">Modules</h3>
+                {modules.map((module, index) => (
+                    <div key={module.id} className="p-4 border rounded-md mt-4 bg-slate-50">
+                        <div className="flex justify-between items-center mb-2">
+                            <h4 className="font-semibold">Module {index + 1}</h4>
+                            <button type="button" onClick={() => removeModule(index)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5"/></button>
+                        </div>
+                         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div className="md:col-span-2">
+                                <label className="text-sm font-medium text-slate-700">Title</label>
+                                <input type="text" value={module.title} onChange={(e) => handleModuleChange(index, { title: e.target.value })} className={formElementClasses} />
+                            </div>
+                            <div className="md:col-span-3">
+                                <label className="text-sm font-medium text-slate-700">Type</label>
+                                <select value={module.type} onChange={(e) => handleModuleChange(index, { type: e.target.value as 'text' | 'video' })} className={formElementClasses}>
+                                    <option value="text">Text / HTML</option>
+                                    <option value="video">Video</option>
+                                </select>
+                            </div>
+                         </div>
+                         <div className="mt-2">
+                            {module.type === 'text' ? (
+                                <>
+                                 <label className="text-sm font-medium text-slate-700">Content (HTML allowed)</label>
+                                <textarea value={module.content} onChange={(e) => handleModuleChange(index, { content: e.target.value })} rows={5} className={formElementClasses} />
+                                </>
+                            ) : (
+                                <>
+                                <label className="text-sm font-medium text-slate-700">Video Source</label>
+                                <select value={module.videoType} onChange={(e) => handleModuleChange(index, { videoType: e.target.value as 'embed' | 'upload'})} className={formElementClasses}>
+                                    <option value="embed">Embed URL (YouTube, Vimeo, etc.)</option>
+                                    <option value="upload">Upload Video File (Max 50MB)</option>
+                                </select>
+                                {module.videoType === 'embed' ? (
+                                    <input type="url" value={module.content} placeholder="https://www.youtube.com/embed/..." onChange={(e) => handleModuleChange(index, { content: e.target.value })} className={`${formElementClasses} mt-2`} />
+                                ) : (
+                                    <div className="mt-2 p-4 border-2 border-dashed rounded-md text-center">
+                                         <input type="file" onChange={(e) => handleVideoSelect(e, index)} accept="video/*" className="hidden" id={`video-upload-${index}`}/>
+                                         <label htmlFor={`video-upload-${index}`} className="cursor-pointer text-zamzam-teal-600 font-semibold flex items-center justify-center">
+                                            <ArrowUpTrayIcon className="h-5 w-5 mr-2"/>
+                                            Choose a video file
+                                         </label>
+                                         {module.content && <p className="text-sm text-slate-500 mt-2">Current file: {module.file?.name || 'Uploaded Video'}</p>}
+                                    </div>
+                                )}
+                                </>
+                            )}
+                         </div>
+                    </div>
+                ))}
+                <div className="mt-4 flex items-center space-x-2">
+                    <button type="button" onClick={addModule} className="text-sm font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-800 border border-zamzam-teal-600 rounded-md px-3 py-1">
+                        + Add Text Module
+                    </button>
+                    <button type="button" onClick={addVideoModule} className="text-sm font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-800 border border-zamzam-teal-600 rounded-md px-3 py-1">
+                        + Add Video Module
+                    </button>
+                </div>
+            </div>
+            
+            {/* Quiz */}
+             <div className="mt-8">
+                <h3 className="text-lg font-bold">Quiz</h3>
+                 {quiz.map((q, qIndex) => (
+                    <div key={`q-${qIndex}`} className="p-4 border rounded-md mt-4 bg-slate-50">
+                        <div className="flex justify-between items-center mb-2">
+                            <h4 className="font-semibold">Question {qIndex + 1}</h4>
+                            <button type="button" onClick={() => removeQuizQuestion(qIndex)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5"/></button>
+                        </div>
+                        <textarea value={q.question} onChange={(e) => handleQuizChange(qIndex, 'question', e.target.value)} placeholder="Question text" rows={2} className={formElementClasses} />
+                        <h5 className="text-sm font-medium mt-2">Options</h5>
+                        {q.options.map((opt, optIndex) => (
+                            <div key={`opt-${qIndex}-${optIndex}`} className="flex items-center space-x-2 mt-1">
+                                <input type="text" value={opt} onChange={(e) => handleQuizChange(qIndex, 'options', e.target.value, optIndex)} className={`${formElementClasses} !py-1`} />
+                                <button type="button" onClick={() => removeQuizOption(qIndex, optIndex)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-4 w-4"/></button>
                             </div>
                         ))}
+                        <button type="button" onClick={() => addQuizOption(qIndex)} className="text-xs font-semibold text-zamzam-teal-600 mt-1">+ Add Option</button>
+                        <div className="mt-2">
+                            <label className="text-sm font-medium text-slate-700">Correct Answer</label>
+                            <select value={q.correctAnswer} onChange={(e) => handleQuizChange(qIndex, 'correctAnswer', e.target.value)} className={formElementClasses}>
+                                <option value="" disabled>Select the correct answer</option>
+                                {q.options.filter(o => o.trim()).map((opt, optIndex) => <option key={`corr-${qIndex}-${optIndex}`} value={opt}>{opt}</option>)}
+                            </select>
+                        </div>
                     </div>
-                    <button type="button" onClick={addQuizQuestion} className="mt-4 flex items-center px-4 py-2 text-sm font-semibold text-zamzam-teal-700 bg-zamzam-teal-100 rounded-md hover:bg-zamzam-teal-200 transition"><PlusIcon className="h-5 w-5 mr-1"/> Add Question</button>
-                </div>
-              </form>
-          </div>
-
-          <div className="p-4 bg-slate-50 border-t flex justify-end items-center space-x-4">
-              <button type="button" onClick={handleClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-200 rounded-md hover:bg-slate-300 transition">
-                  Cancel
-              </button>
-              <button type="submit" form="courseForm" disabled={isSaving || isGenerating} className="px-6 py-2 text-sm font-semibold text-white bg-zamzam-teal-600 rounded-md hover:bg-zamzam-teal-700 transition disabled:bg-slate-400">
-                  {isSaving ? 'Saving...' : (course ? 'Save Changes' : 'Create Course')}
-              </button>
-          </div>
+                 ))}
+                 <button type="button" onClick={addQuizQuestion} className="mt-4 text-sm font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-800 border border-zamzam-teal-600 rounded-md px-3 py-1">
+                    + Add Question
+                 </button>
+            </div>
         </div>
-      </div>
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ isOpen: false, onConfirm: () => {}, message: '' })}
-        onConfirm={confirmModal.onConfirm}
-        title="Confirm AI Generation"
-        message={confirmModal.message}
-      />
-    </>
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal({isOpen: false, onConfirm: ()=>{}, message: ''})}
+          onConfirm={confirmModal.onConfirm}
+          title="Confirm AI Generation"
+          message={confirmModal.message}
+        />
+      </form>
+    </div>
   );
 };
 

@@ -19,11 +19,13 @@ import Toast from './components/Toast';
 import UserProfile from './components/UserProfile';
 import Spinner from './components/Spinner';
 import MyCertificates from './components/MyCertificates';
+import ForgotPassword from './components/ForgotPassword';
+import UpdatePassword from './components/UpdatePassword';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import type { Session, RealtimeChannel } from '@supabase/supabase-js';
 
 
-type Page = 'home' | 'login' | 'register' | 'app';
+type Page = 'home' | 'login' | 'register' | 'app' | 'forgotPassword' | 'updatePassword';
 
 const App: React.FC = () => {
   // Add configuration check at the very top.
@@ -173,6 +175,12 @@ const App: React.FC = () => {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       try {
+        if (_event === 'PASSWORD_RECOVERY') {
+            setSession(session);
+            setCurrentPage('updatePassword');
+            return;
+        }
+
         setSession(session);
         if (session?.user) {
           // Fetch the user profile using the secure RPC call.
@@ -188,23 +196,17 @@ const App: React.FC = () => {
               return;
           }
 
-          // Admins should always be allowed in, regardless of 'approved' status.
-          if (!profile.approved && profile.role !== UserRole.ADMIN) {
-              // This case should ideally be caught by handleLogin on a fresh sign-in,
-              // but it's a good safeguard for session restoration if approval status changes.
-              addToast('Your account is pending approval.', 'error');
-              await supabase.auth.signOut();
-          } else {
-              const sanitizedProfile = {
-                ...profile,
-                badges: profile.badges || [], // Ensure badges is always an array
-              };
-              setCurrentUser(sanitizedProfile as User);
-              setCurrentPage('app');
-              setCurrentView(sanitizedProfile.role === UserRole.ADMIN ? 'admin' : 'dashboard');
-              setAdminTab('courses'); // Default admin view
-              await fetchAppData(sanitizedProfile as User);
-          }
+          // Approval check removed to allow any user to log in for development purposes.
+          // The original logic would check `profile.approved` and sign out unapproved users.
+          const sanitizedProfile = {
+            ...profile,
+            badges: profile.badges || [], // Ensure badges is always an array
+          };
+          setCurrentUser(sanitizedProfile as User);
+          setCurrentPage('app');
+          setCurrentView(sanitizedProfile.role === UserRole.ADMIN ? 'admin' : 'dashboard');
+          setAdminTab('courses'); // Default admin view
+          await fetchAppData(sanitizedProfile as User);
         } else {
             // This block serves as a safety net for non-manual sign-outs (e.g., token expiration).
             // Call the centralized reset function to ensure a clean state.
@@ -326,7 +328,7 @@ const App: React.FC = () => {
     });
     if (error) addToast(error.message, 'error');
     else {
-        addToast('Registration successful! Your account now requires administrator approval before you can log in.', 'success');
+        addToast('Registration successful! You can now log in.', 'success');
         setCurrentPage('login');
     }
   };
@@ -779,6 +781,22 @@ const App: React.FC = () => {
                 <PublicHeader setPage={setPage} />
                 <main className="flex-grow flex items-center justify-center p-4">
                     <Register onRegister={handleRegister} setPage={setPage}/>
+                </main>
+                <Footer />
+            </div>;
+        case 'forgotPassword':
+            return <div className="min-h-screen bg-zamzam-teal-50 font-sans text-slate-800 flex flex-col">
+                <PublicHeader setPage={setPage} />
+                <main className="flex-grow flex items-center justify-center p-4">
+                    <ForgotPassword setPage={setPage} />
+                </main>
+                <Footer />
+            </div>;
+        case 'updatePassword':
+            return <div className="min-h-screen bg-zamzam-teal-50 font-sans text-slate-800 flex flex-col">
+                <PublicHeader setPage={setPage} />
+                <main className="flex-grow flex items-center justify-center p-4">
+                    <UpdatePassword addToast={addToast} setPage={setPage} />
                 </main>
                 <Footer />
             </div>;

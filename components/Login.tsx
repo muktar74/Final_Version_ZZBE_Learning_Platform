@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
-import { BookOpenIcon } from './icons';
+import { BookOpenIcon, UserCircleIcon, LockClosedIcon } from './icons';
 
 interface LoginProps {
   onLogin: (email: string, password: string) => Promise<void>;
-  setPage: (page: 'home' | 'login' | 'register') => void;
+  setPage: (page: 'home' | 'login' | 'register' | 'forgotPassword') => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin, setPage }) => {
@@ -43,31 +43,50 @@ const Login: React.FC<LoginProps> = ({ onLogin, setPage }) => {
           <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
             Email Address
           </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            className="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white"
-            placeholder="employee@zamzambank.com"
-          />
+          <div className="relative">
+             <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+                <UserCircleIcon className="h-5 w-5 text-slate-400" />
+            </span>
+            <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white"
+                placeholder="employee@zamzambank.com"
+            />
+          </div>
         </div>
-        <div className="mb-6">
+        <div className="mb-2">
           <label htmlFor="password"className="block text-sm font-medium text-slate-700 mb-1">
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-            className="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white"
-            placeholder="••••••••"
-          />
+          <div className="relative">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+                <LockClosedIcon className="h-5 w-5 text-slate-400" />
+            </span>
+            <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-zamzam-teal-500 bg-white"
+                placeholder="••••••••"
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-end mb-6">
+            <button 
+                type="button" 
+                onClick={() => setPage('forgotPassword')} 
+                className="text-sm font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-700 transition"
+            >
+                Forgot Password?
+            </button>
         </div>
 
         <button

@@ -54,9 +54,7 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
   const handleBellClick = () => {
     setShowNotifications(prev => !prev);
     if (showUserMenu) setShowUserMenu(false);
-    if (!showNotifications && unreadCount > 0) {
-        onMarkNotificationsRead();
-    }
+    // The call to onMarkNotificationsRead is now handled by a dedicated button inside the dropdown.
   };
 
   const handleUserMenuClick = () => {
@@ -135,8 +133,16 @@ const Header: React.FC<HeaderProps> = ({ user, notifications, onMarkNotification
                 </button>
                 {showNotifications && (
                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
-                        <div className="p-3 border-b">
+                        <div className="p-3 border-b flex justify-between items-center">
                             <h3 className="font-semibold text-slate-800">Notifications</h3>
+                            {unreadCount > 0 && (
+                                <button
+                                    onClick={onMarkNotificationsRead}
+                                    className="text-xs font-semibold text-zamzam-teal-600 hover:text-zamzam-teal-800 transition focus:outline-none"
+                                >
+                                    Mark all as read
+                                </button>
+                            )}
                         </div>
                         <ul className="max-h-96 overflow-y-auto">
                             {notifications.length > 0 ? notifications.map(notif => (
